@@ -3,13 +3,20 @@
 #include <BLEUtils.h>
 #include <BLEServer.h>
 #include "LoadCell.h"
+#include "Wrapper.h"
 #include <BLE2902.h>
 
-// Variables globales pour le partage de données entre les cœurs
-float poidsActuel = 0.0;
+// PIN Definitions 
+#define HX711_DOUT_PIN  4
+#define HX711_SCK_PIN   5
+
+
+// Global variables shared between tasks
+const float calibration_factor = 2280.0; // Adjust based on calibration
+LoadCell loadCell(HX711_DOUT_PIN, HX711_SCK_PIN, calibration_factor);
 BLECharacteristic *pCharacteristic;
 
-// Identifiants BLE
+// IDs BLE
 #define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 #define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 
@@ -19,14 +26,14 @@ void TaskCapteurPoids(void * pvParameters) {
   Serial.println(xPortGetCoreID());
 
   for(;;) { // Boucle infinie pour cette tâche
-    // ICI : Ton code pour lire le HX711 (capteur de poids)
-    // Simulation d'une lecture :
-    poidsActuel = random(0, 1000) / 10.0; 
+    loadCell.measureWeight();
     
-    Serial.print("Lecture capteur : ");
-    Serial.println(poidsActuel);
+    Serial.print("Sensor reading : ");
+    Serial.println(loadCell.getWeight());
 
-    // Très important : laisser un petit délai pour que le système respire
+    // TODO : store the readings in a thread-safe way on flash to be accessed by the BLE task on the other core
+
+    // Delay to let other tasks run (especially important if ever run on the same core as BLE)
     vTaskDelay(100 / portTICK_PERIOD_MS); 
   }
 }
@@ -34,7 +41,7 @@ void TaskCapteurPoids(void * pvParameters) {
 void setup() {
   Serial.begin(115200);
 
-  // 1. Initialisation du Bluetooth
+  // 1. Setup Bluetooth (BLE) on Core 1
   BLEDevice::init("Hydroholic");
   BLEServer *pServer = BLEDevice::createServer();
   BLEService *pService = pServer->createService(SERVICE_UUID);
@@ -44,17 +51,18 @@ void setup() {
                     );
 
   pCharacteristic->addDescriptor(new BLE2902());
-  pCharacteristic->setValue("0.0");
+  pCharacteristic->setValue("-1.0"); // Start with an invalid weight to indicate no reading yet
   pService->start();
   
   BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
-  pAdvertising->addServiceUUID(SERVICE_UUID); // <--- LIGNE OBLIGATOIRE
+  pAdvertising->addServiceUUID(SERVICE_UUID);
   pAdvertising->setScanResponse(true);
-  pAdvertising->setMinPreferred(0x06);  
+  pAdvertising->setMinPreferred(0x06);
   pAdvertising->setMinPreferred(0x12);
   BLEDevice::startAdvertising();
 
-  // 2. CRÉATION DE LA TÂCHE DÉDIÉE SUR LE CORE 0
+  // 2. Setup Load Cell (HX711) on Core 0
+  loadCell.begin();
   xTaskCreatePinnedToCore(
     TaskCapteurPoids,   // Fonction de la tâche
     "LecturePoids",     // Nom de la tâche
@@ -65,7 +73,7 @@ void setup() {
     0                   // CŒUR : 0 (Le Bluetooth est souvent sur le 1 ou géré par le système)
   );
 
-  Serial.println("Système prêt et Dual-Core activé !");
+  Serial.println("System ready on Core 1 for BLE and Core 0 for sensor reading.");
 }
 
 void loop() {
