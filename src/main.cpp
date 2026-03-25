@@ -1,6 +1,6 @@
 #include <Arduino.h>
 #include "LoadCell.h"
-#include "Bluetooth.h"
+#include "ConnectionManager.h"
 #include "Storage.h"
 
 // PIN Definitions
@@ -8,7 +8,7 @@
 #define HX711_SCK_PIN 5
 
 // Global variables shared between tasks
-Bluetooth gourde("Hydroholic");
+ConnectionManager connection("Hydroholic");
 
 const char* STORAGE_FILENAME = "/data.txt";
 Storage stockage(STORAGE_FILENAME);
@@ -37,7 +37,7 @@ void setup() {
 
     // 1. Setup sensor and Bluetooth
     loadCell.begin();
-    gourde.begin();
+    connection.begin();
 
     // 2. Create task for sensor reading on Core 0
     xTaskCreatePinnedToCore(
@@ -56,8 +56,8 @@ void setup() {
 void loop() {
     // La loop tourne sur le Core 1 par défaut
     // On met à jour le Bluetooth toutes les secondes
-    if (gourde.isConnected()) {
-        gourde.updateWeight(loadCell.getWeight());
+    if (connection.isConnected()) {
+        connection.updateWeight(loadCell.getWeight());
     }
     
     delay(1000);
