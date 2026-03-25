@@ -1,33 +1,45 @@
 #include <Arduino.h>
 #include "LoadCell.h"
 #include "Bluetooth.h"
+#include "Storage.h"
 
-// Variables globales
+// PIN Definitions
+#define HX711_DOUT_PIN 4
+#define HX711_SCK_PIN 5
+
+// Global variables shared between tasks
 Bluetooth gourde("Hydroholic");
-LoadCell loadCell(4, 5, 2280.0); // DOUT=4, SCK=5
-float poidsActuel = 0.0;
+
+const char* STORAGE_FILENAME = "/data.txt";
+Storage stockage(STORAGE_FILENAME);
+
+const float CALIBRATION_FACTOR = 2280.0; // Adjust this value based on your calibration
+LoadCell loadCell(HX711_DOUT_PIN, HX711_SCK_PIN, CALIBRATION_FACTOR);
 
 // --- Tâche Capteur (Core 0) ---
 void TaskCapteur(void * pvParameters) {
     for(;;) {
         loadCell.measureWeight();
-        poidsActuel = loadCell.getWeight();
         
-        Serial.print("Poids mesuré : ");
-        Serial.println(poidsActuel);
+        Serial.print("Measured weight : ");
+        Serial.println(loadCell.getWeight());
 
-        vTaskDelay(100 / portTICK_PERIOD_MS); // 10 lectures par seconde
+        // Stockage local
+        uint32_t timestamp = millis() / 1000; // Timestamp en secondes
+        stockage.append(timestamp, loadCell.getWeight());
+
+        vTaskDelay(1000 / portTICK_PERIOD_MS); // 1 reading per second
     }
 }
 
 void setup() {
     Serial.begin(115200);
 
-    // 1. Init Matériel
+    // 1. Setup sensor and Bluetooth
     loadCell.begin();
     gourde.begin();
 
-    // 2. Lancer la tâche sur le Core 0
+    // 2. Create task for sensor reading on Core 0
     xTaskCreatePinnedToCore(
         TaskCapteur, 
         "TaskCapteur", 
@@ -38,14 +50,14 @@ void setup() {
         0
     );
 
-    Serial.println("Système Hydroholic lancé !");
+    Serial.println("System initialized!");
 }
 
 void loop() {
     // La loop tourne sur le Core 1 par défaut
     // On met à jour le Bluetooth toutes les secondes
     if (gourde.isConnected()) {
-        gourde.updateWeight(poidsActuel);
+        gourde.updateWeight(loadCell.getWeight());
     }
     
     delay(1000);
