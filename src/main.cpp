@@ -3,6 +3,7 @@
 #include <BLEUtils.h>
 #include <BLEServer.h>
 #include "LoadCell.h"
+#include <BLE2902.h>
 
 // Variables globales pour le partage de données entre les cœurs
 float poidsActuel = 0.0;
@@ -42,9 +43,16 @@ void setup() {
                       BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY
                     );
 
+  pCharacteristic->addDescriptor(new BLE2902());
   pCharacteristic->setValue("0.0");
   pService->start();
-  BLEDevice::getAdvertising()->start();
+  
+  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+  pAdvertising->addServiceUUID(SERVICE_UUID); // <--- LIGNE OBLIGATOIRE
+  pAdvertising->setScanResponse(true);
+  pAdvertising->setMinPreferred(0x06);  
+  pAdvertising->setMinPreferred(0x12);
+  BLEDevice::startAdvertising();
 
   // 2. CRÉATION DE LA TÂCHE DÉDIÉE SUR LE CORE 0
   xTaskCreatePinnedToCore(

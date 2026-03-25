@@ -1,14 +1,4 @@
 <button id="connect">Connecter à la Gourde</button>
-<script>
-  document.getElementById('connect').addEventListener('click', async () => {
-    const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
-    try {
-      const device = await navigator.bluetooth.requestDevice({
-        filters: [{ name: "Hydroholic" }],
-        optionalServices: [SERVICE_UUID]
-      });
-      const server = await device.gatt.connect();
-      alert("Connecté à " + device.name);
-    } catch (e) { console.error(e); }
-  });
-</script>
+<div style="margin-top: 20px;">Poids : <span id="poids-valeur">0</span> g</div>
+
+<script src="client.js"></script>
