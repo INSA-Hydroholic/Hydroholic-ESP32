@@ -33,7 +33,7 @@ void setup() {
   Serial.begin(115200);
 
   // 1. Initialisation du Bluetooth
-  BLEDevice::init("ESP32_Poids");
+  BLEDevice::init("Hydroholic");
   BLEServer *pServer = BLEDevice::createServer();
   BLEService *pService = pServer->createService(SERVICE_UUID);
   pCharacteristic = pService->createCharacteristic(
