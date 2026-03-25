@@ -1,11 +1,11 @@
-#include "Wrapper.h"
+#include "Bluetooth.h"
 
 #define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 #define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 
-Wrapper::Wrapper(const char* deviceName) : _deviceName(deviceName) {}
+Bluetooth::Bluetooth(const char* deviceName) : _deviceName(deviceName) {}
 
-void Wrapper::begin() {
+void Bluetooth::begin() {
     BLEDevice::init(_deviceName);
     _pServer = BLEDevice::createServer();
     _pServer->setCallbacks(new ServerCallbacks(this));
@@ -20,16 +20,34 @@ void Wrapper::begin() {
 
     // Ajout du descripteur pour activer les notifications (obligatoire pour Web Bluetooth/iOS)
     _pCharacteristic->addDescriptor(new BLE2902());
+    _pCharacteristic->setValue("-1.0");
 
     pService->start();
-    _pServer->getAdvertising()->start();
+    // Configuration de l'Advertising
+    BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+    pAdvertising->addServiceUUID(SERVICE_UUID);
+    pAdvertising->setScanResponse(true);
+    pAdvertising->setMinPreferred(0x06);
+    pAdvertising->setMinPreferred(0x12);
+    BLEDevice::startAdvertising();
+    
+    Serial.println("Bluetooth : Prêt et visible !");
 }
 
-bool Wrapper::isConnected() {
+void Bluetooth::updateWeight(float weight) {
+    if (_deviceConnected) {
+        char buffer[10];
+        dtostrf(weight, 4, 2, buffer); // Conversion float -> texte
+        _pCharacteristic->setValue(buffer);
+        _pCharacteristic->notify(); // Envoie la notif au site web
+    }
+}
+
+bool Bluetooth::isConnected() {
     return _deviceConnected;
 }
 
-void Wrapper::goToSleep(uint32_t secondes) {
+void Bluetooth::goToSleep(uint32_t secondes) {
     Serial.println("Entering sleep mode");
     
     if (secondes > 0) {
