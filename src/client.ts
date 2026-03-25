@@ -4,7 +4,7 @@ const CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
 
 async function connectToGourde() {
   try {
-    console.log("Recherche de la gourde HYDROHOLIC...");
+    console.log("Recherche de la gourde");
 
     // 1. Scanner et demander l'accès à l'appareil
     const device = await navigator.bluetooth.requestDevice({
