@@ -7,7 +7,7 @@
 
 class Storage {
 public:
-    Storage(const char* filename = "/data.txt");
+    Storage(const char* filename = "/data.csv");
     bool begin();
     bool append(uint32_t timestamp, float value);
     String readAll();

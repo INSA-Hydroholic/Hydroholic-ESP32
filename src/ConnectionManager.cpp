@@ -10,6 +10,14 @@ ConnectionManager::ConnectionManager(const char* deviceName) : _deviceName(devic
 void ConnectionManager::TimeCallbacks::onWrite(BLECharacteristic* pChar) {
     std::string value = pChar->getValue();
     if (value.length() > 0) {
+
+        if (value == "OK") {
+            Serial.println("Confirmation reçue !");
+            // Ici, il faudra prévenir le main.cpp de vider le storage
+            // On peut utiliser un flag global ou un callback
+            _manager->shouldClearStorage = true;
+            return; 
+        }
         // Le client envoie l'Epoch Unix sous forme de string
         long epochTime = atol(value.c_str());
 
@@ -46,7 +54,7 @@ void ConnectionManager::begin() {
         TIME_CHAR_UUID,
         BLECharacteristic::PROPERTY_WRITE
     );
-    _pTimeChar->setCallbacks(new TimeCallbacks());
+    _pTimeChar->setCallbacks(new TimeCallbacks(this));
 
 
     pService->start();
@@ -72,4 +80,13 @@ void ConnectionManager::updateWeight(float weight) {
 
 bool ConnectionManager::isConnected() {
     return _deviceConnected;
+}
+
+void ConnectionManager::sendHistoryChunk(String chunk) {
+    if (_deviceConnected) {
+        _pWeightChar->setValue(chunk.c_str());
+        _pWeightChar->notify();
+        // On laisse un petit délai pour que le téléphone puisse digérer
+        delay(50); 
+    }
 }

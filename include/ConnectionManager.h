@@ -16,6 +16,10 @@ public:
     
     bool isConnected();
 
+    void sendHistoryChunk(String chunk);
+
+    bool shouldClearStorage = false; // Flag to indicate when the storage should be cleared after successful sync
+
 private:
     const char* _deviceName;
     BLEServer* _pServer;
@@ -37,6 +41,9 @@ private:
     };
 
     class TimeCallbacks : public BLECharacteristicCallbacks {
-        void onWrite(BLECharacteristic* pChar) override; // Appelée quand le client écrit
+        ConnectionManager* _manager;
+        public:
+            TimeCallbacks(ConnectionManager* m) : _manager(m) {}
+            void onWrite(BLECharacteristic* pChar) override;
     };
 };
