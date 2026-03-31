@@ -7,58 +7,54 @@
 #define HX711_DOUT_PIN 4
 #define HX711_SCK_PIN 5
 
-// Global variables shared between tasks
 ConnectionManager connection("Hydroholic");
+Storage stockage("/data.txt");
+LoadCell loadCell(HX711_DOUT_PIN, HX711_SCK_PIN, 2280.0);
 
-const char* STORAGE_FILENAME = "/data.txt";
-Storage stockage(STORAGE_FILENAME);
-
-const float CALIBRATION_FACTOR = 2280.0; // Adjust this value based on your calibration
-LoadCell loadCell(HX711_DOUT_PIN, HX711_SCK_PIN, CALIBRATION_FACTOR);
-
-// --- Tâche Capteur (Core 0) ---
 void TaskCapteur(void * pvParameters) {
+    unsigned long lastSaveTime = 0;
+
     for(;;) {
         loadCell.measureWeight();
+        float currentWeight = loadCell.getWeight();
         
-        Serial.print("Measured weight : ");
-        Serial.println(loadCell.getWeight());
+        Serial.print("Poids mesuré (Core 0) : ");
+        Serial.println(currentWeight);
 
-        // Stockage local
-        uint32_t timestamp = millis() / 1000; // Timestamp en secondes
-        stockage.append(timestamp, loadCell.getWeight());
+        if (millis() - lastSaveTime > 60000) { 
+            uint32_t timestamp = millis() / 1000;
+            stockage.append(timestamp, currentWeight);
+            lastSaveTime = millis();
+            Serial.println(">>> Donnée archivée dans la Flash.");
+        }
 
-        vTaskDelay(1000 / portTICK_PERIOD_MS); // 1 reading per second
+        vTaskDelay(500 / portTICK_PERIOD_MS); 
     }
 }
 
 void setup() {
     Serial.begin(115200);
 
-    // 1. Setup sensor and Bluetooth
+    if (!stockage.begin()) {
+        Serial.println("ERREUR : Impossible d'initialiser LittleFS");
+    }
+
     loadCell.begin();
-    connection.begin();
+    connection.begin(); 
 
-    // 2. Create task for sensor reading on Core 0
-    xTaskCreatePinnedToCore(
-        TaskCapteur, 
-        "TaskCapteur", 
-        10000, 
-        NULL, 
-        1, 
-        NULL, 
-        0
-    );
+    xTaskCreatePinnedToCore(TaskCapteur, "TaskCapteur", 10000, NULL, 1, NULL, 0);
 
-    Serial.println("System initialized!");
+    Serial.println("Système Hydroholic prêt !");
 }
 
 void loop() {
-    // La loop tourne sur le Core 1 par défaut
-    // On met à jour le Bluetooth toutes les secondes
     if (connection.isConnected()) {
-        connection.updateWeight(loadCell.getWeight());
+
+        float testValeur = millis() / 1000.0; 
+        connection.updateWeight(testValeur);
+        
+        Serial.print("Test Bluetooth - Envoi de : ");
+        Serial.println(testValeur);
     }
-    
     delay(1000);
 }
