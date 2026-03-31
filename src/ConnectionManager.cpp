@@ -1,11 +1,11 @@
-#include "Bluetooth.h"
+#include "ConnectionManager.h"
 
 #define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 #define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 
-Bluetooth::Bluetooth(const char* deviceName) : _deviceName(deviceName) {}
+ConnectionManager::ConnectionManager(const char* deviceName) : _deviceName(deviceName) {}
 
-void Bluetooth::begin() {
+void ConnectionManager::begin() {
     BLEDevice::init(_deviceName);
     _pServer = BLEDevice::createServer();
     _pServer->setCallbacks(new ServerCallbacks(this));
@@ -18,7 +18,7 @@ void Bluetooth::begin() {
         BLECharacteristic::PROPERTY_NOTIFY
     );
 
-    // Ajout du descripteur pour activer les notifications (obligatoire pour Web Bluetooth/iOS)
+    // Ajout du descripteur pour activer les notifications (obligatoire pour Web ConnectionManager/iOS)
     _pCharacteristic->addDescriptor(new BLE2902());
     _pCharacteristic->setValue("-1.0");
 
@@ -31,10 +31,10 @@ void Bluetooth::begin() {
     pAdvertising->setMinPreferred(0x12);
     BLEDevice::startAdvertising();
     
-    Serial.println("Bluetooth : Prêt et visible !");
+    Serial.println("ConnectionManager : Prêt et visible !");
 }
 
-void Bluetooth::updateWeight(float weight) {
+void ConnectionManager::updateWeight(float weight) {
     if (_deviceConnected) {
         char buffer[10];
         dtostrf(weight, 4, 2, buffer); // Conversion float -> texte
@@ -43,17 +43,6 @@ void Bluetooth::updateWeight(float weight) {
     }
 }
 
-bool Bluetooth::isConnected() {
+bool ConnectionManager::isConnected() {
     return _deviceConnected;
-}
-
-void Bluetooth::goToSleep(uint32_t secondes) {
-    Serial.println("Entering sleep mode");
-    
-    if (secondes > 0) {
-        esp_sleep_enable_timer_wakeup(secondes * 1000000ULL);
-    }
-
-    Serial.flush(); 
-    esp_deep_sleep_start();
 }
