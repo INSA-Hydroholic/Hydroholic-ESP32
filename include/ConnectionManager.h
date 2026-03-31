@@ -4,6 +4,7 @@
 #include <BLEDevice.h>
 #include <BLEServer.h>
 #include <BLE2902.h> // Notifications
+#include <time.h> // to synchronize time via BLE
 
 class ConnectionManager {
 public:
@@ -18,7 +19,8 @@ public:
 private:
     const char* _deviceName;
     BLEServer* _pServer;
-    BLECharacteristic* _pCharacteristic;
+    BLECharacteristic* _pWeightChar;
+    BLECharacteristic* _pTimeChar;
     bool _deviceConnected = false;
 
     // Callbacks to detect connection/disconnection
@@ -32,5 +34,9 @@ private:
                 // On relance le ConnectionManager pour qu'il soit à nouveau visible
                 pServer->getAdvertising()->start();
             }
+    };
+
+    class TimeCallbacks : public BLECharacteristicCallbacks {
+        void onWrite(BLECharacteristic* pChar) override; // Appelée quand le client écrit
     };
 };

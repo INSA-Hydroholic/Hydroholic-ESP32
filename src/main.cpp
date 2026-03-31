@@ -25,8 +25,9 @@ void TaskCapteur(void * pvParameters) {
         Serial.println(loadCell.getWeight());
 
         // Stockage local
-        uint32_t timestamp = millis() / 1000; // Timestamp en secondes
-        stockage.append(timestamp, loadCell.getWeight());
+        time_t now;
+        time(&now);
+        stockage.append((uint32_t)now, loadCell.getWeight());
 
         vTaskDelay(1000 / portTICK_PERIOD_MS); // 1 reading per second
     }
