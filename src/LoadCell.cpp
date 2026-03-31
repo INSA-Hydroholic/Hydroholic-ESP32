@@ -1,9 +1,10 @@
 #include "LoadCell.h"
 
 void LoadCell::begin() {
-    scale.begin();
+    scale.begin(_doutPin, _sckPin);
     scale.set_scale(calibration_factor);
     scale.tare(); // Tare the scale to zero
+    Serial.println("HX711 : Initialisé avec succès");
 }
 
 void LoadCell::measureWeight() {
