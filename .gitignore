@@ -41,3 +41,5 @@
 
 # debug information files
 *.dwo
+
+esp32/Hydroholic-ESP32/src/get-platformio.py

@@ -10,14 +10,13 @@ ConnectionManager::ConnectionManager(const char* deviceName) : _deviceName(devic
 void ConnectionManager::TimeCallbacks::onWrite(BLECharacteristic* pChar) {
     std::string value = pChar->getValue();
     if (value.length() > 0) {
-        
-        // Client sends epoch time unix as string, we convert it to long
+        // Client sends Epoch time as a string, we convert it to long
         long epochTime = atol(value.c_str());
         long startTime = epochTime - (millis() / 1000);
         
-        *_isSynched = true;
+        *_manager->_isSynched = true;
 
-        _storage->migrateTempFiles(startTime);
+        _manager->_storage->migrateTempFiles(startTime);
 
         // We synchronize the ESP32 time with the received epoch time
         struct timeval tv;
@@ -25,7 +24,7 @@ void ConnectionManager::TimeCallbacks::onWrite(BLECharacteristic* pChar) {
         tv.tv_usec = 0;
         settimeofday(&tv, NULL);
 
-        Serial.print("Heure synchronisée via BLE ! Epoch : ");
+        Serial.print("Time synchronized. Epoch : ");
         Serial.println(epochTime);
     }
 }
@@ -46,7 +45,7 @@ void ConnectionManager::begin(Storage* storage, bool* isSynched) {
         BLECharacteristic::PROPERTY_NOTIFY
     );
 
-    // Ajout du descripteur pour activer les notifications (obligatoire pour Web ConnectionManager/iOS)
+    // Add a descriptor to enable notifications on the client side
     _pWeightChar->addDescriptor(new BLE2902());
     _pWeightChar->setValue("-1.0");
 
@@ -55,7 +54,7 @@ void ConnectionManager::begin(Storage* storage, bool* isSynched) {
         TIME_CHAR_UUID,
         BLECharacteristic::PROPERTY_WRITE
     );
-    _pTimeChar->setCallbacks(new TimeCallbacks(storage, isSynched));
+    _pTimeChar->setCallbacks(new TimeCallbacks(this));
 
 
     pService->start();
@@ -67,18 +66,28 @@ void ConnectionManager::begin(Storage* storage, bool* isSynched) {
     pAdvertising->setMinPreferred(0x12);
     BLEDevice::startAdvertising();
     
-    Serial.println("ConnectionManager : Prêt et visible !");
+    Serial.println("ConnectionManager ready and advertising");
 }
 
 void ConnectionManager::updateWeight(float weight) {
     if (_deviceConnected) {
         char buffer[10];
-        dtostrf(weight, 4, 2, buffer); // Conversion float -> texte
+        dtostrf(weight, 4, 2, buffer); // Conversion float -> text
         _pWeightChar->setValue(buffer);
-        _pWeightChar->notify(); // Envoie la notif au site web
+        _pWeightChar->notify(); // Send notification to client
     }
 }
 
 bool ConnectionManager::isConnected() {
     return _deviceConnected;
+}
+
+void ConnectionManager::sendHistoryChunk(String chunk) {
+    if (_deviceConnected) {
+        _pWeightChar->setValue(chunk.c_str());
+        _pWeightChar->notify();
+
+        // Small delay to ensure the client has time to process the notification
+        delay(50); 
+    }
 }

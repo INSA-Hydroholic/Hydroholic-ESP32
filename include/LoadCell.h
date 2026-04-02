@@ -21,6 +21,7 @@ class LoadCell {
     void begin();       // Initializes the HX711 and sets the calibration factor
     void measureWeight();   // Handles reading, median filtering, and EMA calculation
     float getWeight() { return emaValue; } // Returns the smoothed weight value
+    
 };
 
 #endif // _LOADCELL_H_

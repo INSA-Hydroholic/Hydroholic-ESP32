@@ -17,6 +17,10 @@ public:
     
     bool isConnected();
 
+    void sendHistoryChunk(String chunk);
+
+    bool shouldClearStorage = false; // Flag to indicate when the storage should be cleared after successful sync
+
 private:
     const char* _deviceName;
     BLEServer* _pServer;
@@ -35,15 +39,14 @@ private:
             void onDisconnect(BLEServer* pServer) override { 
                 _manager->_deviceConnected = false;
                 *_manager->_isSynched = false;
-                pServer->getAdvertising()->start();
+                _manager->_pServer->getAdvertising()->start();
             }
     };
 
     class TimeCallbacks : public BLECharacteristicCallbacks {
+        ConnectionManager* _manager;
         public:
-            Storage* _storage;
-            bool* _isSynched;
-            TimeCallbacks(Storage* storage, bool* isSynched) : _storage(storage), _isSynched(isSynched) {}
-            void onWrite(BLECharacteristic* pChar) override; // Appelée quand le client écrit
+            TimeCallbacks(ConnectionManager* m) : _manager(m) {}
+            void onWrite(BLECharacteristic* pChar) override;
     };
 };
