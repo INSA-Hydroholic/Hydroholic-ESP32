@@ -51,11 +51,14 @@ void ConnectionManager::begin() {
 
 
     _pTimeChar = pService->createCharacteristic(
-        TIME_CHAR_UUID,
-        BLECharacteristic::PROPERTY_WRITE
+    TIME_CHAR_UUID,
+    BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_NOTIFY 
     );
-    _pTimeChar->setCallbacks(new TimeCallbacks(this));
 
+
+    _pTimeChar->addDescriptor(new BLE2902()); 
+
+    _pTimeChar->setCallbacks(new TimeCallbacks(this));
 
     pService->start();
     // Configuration de l'Advertising
