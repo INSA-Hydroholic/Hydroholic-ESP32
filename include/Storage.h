@@ -14,7 +14,6 @@ public:
     bool clear();
     void migrateTempFiles(long startTime);
     bool prepareDataForSync();
-    String readSyncFile();
     bool clearSyncFile();
 private:
     const char* _filename;

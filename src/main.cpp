@@ -3,129 +3,114 @@
 #include "ConnectionManager.h"
 #include "Storage.h"
 
-// PIN Definitions
 #define HX711_DOUT_PIN 4
 #define HX711_SCK_PIN 5
 
-// Global state
 ConnectionManager connection("Hydroholic");
 Storage storage("/data.csv");
 LoadCell loadCell(HX711_DOUT_PIN, HX711_SCK_PIN, 2280.0);
 
-// Bool assignments are atomic on ESP32 - no need for mutex
-// Volatile prevents compiler from optimizing and caching the value
-volatile bool isTimeSynched = false;  // Set by BLE characteristic onWrite callback
-volatile bool isSyncing = false;      // Set when we start sending sync.csv to client
-
+volatile bool isTimeSynched = false;
+volatile bool isSyncing = false;
+volatile bool isWaitingForConfirm = false; 
+volatile bool isStorageReady = false;      
+volatile float globalWeight = 0.0;
 
 void TaskCapteur(void * pvParameters) {
     unsigned long lastSaveTime = 0;
     for(;;) {
         loadCell.measureWeight();
-        float currentWeight = loadCell.getWeight();
+        globalWeight = loadCell.getWeight(); 
         
-        Serial.print("Measured weight (Core 0) : ");
-        Serial.println(currentWeight);
-
-        time_t now;
-        time(&now);
-        // Store with isTimeSynched - volatile read is sufficient for bool
-        storage.append((uint32_t)now, currentWeight, isTimeSynched);
-
+        
+        if (isStorageReady && (millis() - lastSaveTime > 60000)) {
+            lastSaveTime = millis(); 
+            time_t now;
+            time(&now);
+            if (!storage.append((uint32_t)now, globalWeight, isTimeSynched)) {
+                Serial.println("Archive reportée (FS occupé)");
+            } else {
+                Serial.println("Donnée archivée.");
+            }
+        }
         vTaskDelay(500 / portTICK_PERIOD_MS);
     }
 }
 
 void setup() {
     Serial.begin(115200);
-
-    if (!storage.begin()) {
-        Serial.println("Error at LittleFS startup");
+    // On force le formatage si besoin avec true
+    if (storage.begin()) {
+        isStorageReady = true;
+    } else {
+        Serial.println("ERREUR : LittleFS HS");
     }
 
     loadCell.begin();
     connection.begin(&storage, (bool*)&isTimeSynched);
-
     xTaskCreatePinnedToCore(TaskCapteur, "TaskCapteur", 10000, NULL, 1, NULL, 0);
-
-    Serial.println("Hydroholic system ready");
 }
 
 void loop() {
-    // For the loop, we define 4 main states based on connection and sync status:
-
-    // State 1: Not connected - wait for connection
     if (!connection.isConnected()) {
-        // Reset sync flag on disconnect
-        if (isSyncing) {
-            isSyncing = false;
-            Serial.println("Disconnected. Sync cancelled.");
-        }
+        isSyncing = false;
+        isWaitingForConfirm = false;
         delay(100);
         return;
     }
 
-    // STATE 2: Connected but NOT time synched - wait for time sync packet from client
+    // STATE 2 : Attente de l'heure
     if (!isTimeSynched) {
-        Serial.println("Waiting for time synchronization packet");
         delay(1000);
         return;
     }
 
-    // STATE 3: Connected and time synched, but NOT YET syncing - prepare sync
-    if (isTimeSynched && !isSyncing) {
-        Serial.println("Time synchronized! Preparing to send historical data");
-        
-        // Migrate: temp.csv (with relative timestamps) → data.csv (with real timestamps)
-        // Note: migrateTempFiles is called by the BLE callback, so this is already done
-        // But we do it here safely in case of edge cases
-        
-        // Rename data.csv → sync.csv for transmission
+    // STATE 3 : Préparation (On n'entre ici que si on n'est pas déjà en train de synchro)
+    if (isTimeSynched && !isSyncing && !isWaitingForConfirm) {
         if (storage.prepareDataForSync()) {
             isSyncing = true;
-            Serial.println("Ready to send data");
+            Serial.println("Début de l'envoi...");
         } else {
-            Serial.println("No data to send or error preparing data for sync");
+            // Pas de données à envoyer, on passe directement en mode "prêt"
+            isWaitingForConfirm = true; 
         }
-        
-        delay(100);
-        return;
     }
 
-    // STATE 4: Connected, synched, and currently syncing - send data line by line
+    // STATE 4 : Envoi streaming
+    // Dans main.cpp - STATE 4
     if (isSyncing) {
-        String syncData = storage.readSyncFile();
-        
-        if (syncData.length() > 0) {
-            Serial.println("Sending historical data line by line");
-            
-            // Split and send line by line
-            int lineStart = 0;
-            while (lineStart < syncData.length()) {
-                int lineEnd = syncData.indexOf('\n', lineStart);
-                if (lineEnd == -1) lineEnd = syncData.length();
-                
-                String line = syncData.substring(lineStart, lineEnd);
+        File f = LittleFS.open("/sync.csv", "r"); 
+        if (f) {
+            Serial.println("Envoi sécurisé de l'historique...");
+            while (f.available()) {
+                String line = f.readStringUntil('\n');
                 if (line.length() > 0) {
                     connection.sendHistoryChunk("HIST:" + line + "\n");
-                    delay(40); // Small delay to avoid overwhelming BLE
+                    delay(50); 
                 }
-                lineStart = lineEnd + 1;
             }
-            Serial.println("Finished sending data. Waiting for client confirmation");
-        }
-        
-        // Wait for client to confirm receipt via shouldClearStorage flag
-        if (connection.shouldClearStorage) {
-            storage.clearSyncFile();
-            connection.shouldClearStorage = false;
+            f.close();
             isSyncing = false;
-            Serial.println("Historical data synchronized and deleted!");
+            isWaitingForConfirm = true; 
+            Serial.println("Envoi fini. Attente du OK client...");
+        } else {
+            // SI LE FICHIER N'EXISTE PAS OU NE PEUT PAS S'OUVRIR
+            Serial.println("Erreur : Impossible d'ouvrir sync.csv, abandon de la synchro.");
+            isSyncing = false; 
         }
     }
 
-    // Send current weight for real-time display (non-blocking)
-    connection.updateWeight(loadCell.getWeight());
-    
+    // STATE 5 : Réception du OK (Vider le stockage)
+    if (connection.shouldClearStorage) {
+        connection.shouldClearStorage = false; 
+        if (LittleFS.exists("/sync.csv")) {
+            storage.clearSyncFile();
+            Serial.println("Fichier de synchro supprimé !");
+        }
+        isWaitingForConfirm = false; 
+    }
+
+    // Poids en temps réel
+   connection.updateWeight(globalWeight);
     delay(1000);
 }

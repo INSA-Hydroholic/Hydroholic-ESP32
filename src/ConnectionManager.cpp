@@ -10,6 +10,12 @@ ConnectionManager::ConnectionManager(const char* deviceName) : _deviceName(devic
 void ConnectionManager::TimeCallbacks::onWrite(BLECharacteristic* pChar) {
     std::string value = pChar->getValue();
     if (value.length() > 0) {
+
+        if (value == "OK") {
+            Serial.println("Confirmation reçue : Le client a bien tout enregistré !");
+            _manager->shouldClearStorage = true; 
+            return; 
+        }
         // Client sends Epoch time as a string, we convert it to long
         long epochTime = atol(value.c_str());
         long startTime = epochTime - (millis() / 1000);

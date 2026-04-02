@@ -6,16 +6,44 @@ Storage::Storage(const char* filename) : _filename(filename) {
 }
 
 bool Storage::begin() {
-    return LittleFS.begin();
+    // Le paramètre 'true' demande à l'ESP32 de formater la Flash 
+    // si elle n'est pas déjà prête.
+    bool success = LittleFS.begin(true); 
+    
+    if (success) {
+        Serial.println("LittleFS monté avec succès !");
+    } else {
+        Serial.println("ÉCHEC critique du montage LittleFS...");
+    }
+    return success;
 }
 
 
 bool Storage::append(uint32_t timestamp, float value, bool isSynched) {
-    _filename = isSynched ? "/data.csv" : "/temp.csv";
+    const char* targetFile = isSynched ? "/data.csv" : "/temp.csv";
 
     if (xSemaphoreTake(_mutex, portMAX_DELAY)) {
-        File file = LittleFS.open(_filename, "a");
+
+        if (!LittleFS.exists(targetFile)) {
+            File testFile = LittleFS.open(targetFile, "w");
+            if (testFile) {
+                testFile.close();
+            } else {
+                vTaskDelay(50 / portTICK_PERIOD_MS);
+                testFile = LittleFS.open(targetFile, "w");
+                if (testFile) testFile.close();
+            }
+        }
+        
+        File file = LittleFS.open(targetFile, "a");
         if (!file) {
+            // Si l'ouverture échoue, on tente une deuxième fois après un micro-délai
+            vTaskDelay(50 / portTICK_PERIOD_MS);
+            file = LittleFS.open(targetFile, "a");
+        }
+        
+        if (!file) {
+            Serial.printf("Erreur critique : Impossible de créer %s\n", targetFile);
             xSemaphoreGive(_mutex);
             return false;
         }
@@ -109,22 +137,6 @@ bool Storage::prepareDataForSync() {
     return false;
 }
 
-String Storage::readSyncFile() {
-    // Read all content from /sync.csv
-    String data = "";
-    if (xSemaphoreTake(_mutex, portMAX_DELAY)) {
-        File syncFile = LittleFS.open("/sync.csv", "r");
-        if (syncFile) {
-            while (syncFile.available()) {
-                data += syncFile.readStringUntil('\n');
-                data += '\n';
-            }
-            syncFile.close();
-        }
-        xSemaphoreGive(_mutex);
-    }
-    return data;
-}
 
 bool Storage::clearSyncFile() {
     // Delete /sync.csv
