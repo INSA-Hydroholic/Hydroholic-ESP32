@@ -10,12 +10,18 @@ ConnectionManager::ConnectionManager(const char* deviceName) : _deviceName(devic
 void ConnectionManager::TimeCallbacks::onWrite(BLECharacteristic* pChar) {
     std::string value = pChar->getValue();
     if (value.length() > 0) {
-        // Le client envoie l'Epoch Unix sous forme de string
+        
+        // Client sends epoch time unix as string, we convert it to long
         long epochTime = atol(value.c_str());
+        long startTime = epochTime - (millis() / 1000);
+        
+        *_isSynched = true;
 
-        // On synchronise l'horloge interne (RTC) de l'ESP32
+        _storage->migrateTempFiles(startTime);
+
+        // We synchronize the ESP32 time with the received epoch time
         struct timeval tv;
-        tv.tv_sec = epochTime; 
+        tv.tv_sec = epochTime;
         tv.tv_usec = 0;
         settimeofday(&tv, NULL);
 
@@ -24,7 +30,10 @@ void ConnectionManager::TimeCallbacks::onWrite(BLECharacteristic* pChar) {
     }
 }
 
-void ConnectionManager::begin() {
+void ConnectionManager::begin(Storage* storage, bool* isSynched) {
+    this->_storage = storage;
+    this->_isSynched = isSynched;
+    
     BLEDevice::init(_deviceName);
     _pServer = BLEDevice::createServer();
     _pServer->setCallbacks(new ServerCallbacks(this));
@@ -46,7 +55,7 @@ void ConnectionManager::begin() {
         TIME_CHAR_UUID,
         BLECharacteristic::PROPERTY_WRITE
     );
-    _pTimeChar->setCallbacks(new TimeCallbacks());
+    _pTimeChar->setCallbacks(new TimeCallbacks(storage, isSynched));
 
 
     pService->start();

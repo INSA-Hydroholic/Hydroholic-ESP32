@@ -8,8 +8,9 @@
 #define HX711_SCK_PIN 5
 
 ConnectionManager connection("Hydroholic");
-Storage stockage("/data.txt");
+Storage stockage("/data.csv");
 LoadCell loadCell(HX711_DOUT_PIN, HX711_SCK_PIN, 2280.0);
+bool _isSynched = false; 
 
 void TaskCapteur(void * pvParameters) {
     unsigned long lastSaveTime = 0;
@@ -21,12 +22,11 @@ void TaskCapteur(void * pvParameters) {
         Serial.print("Poids mesuré (Core 0) : ");
         Serial.println(currentWeight);
 
-        // Stockage local
         time_t now;
         time(&now);
-        stockage.append((uint32_t)now, loadCell.getWeight());
+        stockage.append((uint32_t)now, loadCell.getWeight(), _isSynched);
 
-        vTaskDelay(500 / portTICK_PERIOD_MS); 
+        vTaskDelay(500 / portTICK_PERIOD_MS);
     }
 }
 
@@ -38,7 +38,7 @@ void setup() {
     }
 
     loadCell.begin();
-    connection.begin(); 
+    connection.begin(&stockage, &_isSynched);
 
     xTaskCreatePinnedToCore(TaskCapteur, "TaskCapteur", 10000, NULL, 1, NULL, 0);
 
@@ -46,9 +46,9 @@ void setup() {
 }
 
 void loop() {
-    if (connection.isConnected()) {
+    if (connection.isConnected() && _isSynched) {
 
-        float testValeur = millis() / 1000.0; 
+        float testValeur = millis() / 1000.0;
         connection.updateWeight(testValeur);
         
         Serial.print("Test Bluetooth - Envoi de : ");

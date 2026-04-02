@@ -7,7 +7,7 @@
 class LoadCell {
   private:
     HX711 scale;
-    int _doutPin;      
+    int _doutPin;
     int _sckPin;
     float calibration_factor;
     float samples[11];              // Array to store multiple readings for post-processing
