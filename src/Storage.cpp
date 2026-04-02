@@ -1,4 +1,5 @@
 #include "Storage.h"
+#include "ConnectionManager.h"
 
 Storage::Storage(const char* filename) : _filename(filename) {
     _mutex = xSemaphoreCreateMutex();
@@ -9,7 +10,9 @@ bool Storage::begin() {
 }
 
 
-bool Storage::append(uint32_t timestamp, float value) {
+bool Storage::append(uint32_t timestamp, float value, bool isSynched) {
+    _filename = isSynched ? "/data.csv" : "/temp.csv";
+
     if (xSemaphoreTake(_mutex, portMAX_DELAY)) {
         File file = LittleFS.open(_filename, "a");
         if (!file) {
@@ -46,6 +49,87 @@ String Storage::readAll() {
 bool Storage::clear() {
     if (xSemaphoreTake(_mutex, portMAX_DELAY)) {
         bool result = LittleFS.remove(_filename);
+        xSemaphoreGive(_mutex);
+        return result;
+    }
+    return false;
+}
+
+void Storage::migrateTempFiles(long startTime) {
+    // Function to migrate data from temp.csv to data.csv, adjusting timestamps based on startTime
+    if (xSemaphoreTake(_mutex, portMAX_DELAY)) {
+        if (!LittleFS.exists("/temp.csv")) {
+            xSemaphoreGive(_mutex);
+            return;
+        }
+
+        File tempFile = LittleFS.open("/temp.csv", "r");
+        File dataFile = LittleFS.open("/data.csv", "a");
+
+        if (!tempFile || !dataFile) {
+            if (tempFile) tempFile.close();
+            if (dataFile) dataFile.close();
+            Serial.println("Error opening files for migration");
+            xSemaphoreGive(_mutex);
+            return;
+        }
+
+        while (tempFile.available()) {
+            String line = tempFile.readStringUntil('\n');
+            int commaIndex = line.indexOf(',');
+            if (commaIndex != -1) {
+                long relativeTime = line.substring(0, commaIndex).toInt();
+                String weight = line.substring(commaIndex + 1);
+                
+                long realTimestamp = startTime + relativeTime;
+                dataFile.printf("%u,%s\n", (uint32_t)realTimestamp, weight.c_str());
+            }
+        }
+
+        tempFile.close();
+        dataFile.close();
+        LittleFS.remove("/temp.csv"); 
+        
+        xSemaphoreGive(_mutex);
+        Serial.println("Migration terminée. temp.csv supprimé.");
+    }
+}
+
+bool Storage::prepareDataForSync() {
+    // Rename /data.csv to /sync.csv for sending to client
+    if (xSemaphoreTake(_mutex, portMAX_DELAY)) {
+        if (LittleFS.exists("/data.csv")) {
+            LittleFS.rename("/data.csv", "/sync.csv");
+            xSemaphoreGive(_mutex);
+            Serial.println("Fichier renommé en sync.csv pour envoi.");
+            return true;
+        }
+        xSemaphoreGive(_mutex);
+    }
+    return false;
+}
+
+String Storage::readSyncFile() {
+    // Read all content from /sync.csv
+    String data = "";
+    if (xSemaphoreTake(_mutex, portMAX_DELAY)) {
+        File syncFile = LittleFS.open("/sync.csv", "r");
+        if (syncFile) {
+            while (syncFile.available()) {
+                data += syncFile.readStringUntil('\n');
+                data += '\n';
+            }
+            syncFile.close();
+        }
+        xSemaphoreGive(_mutex);
+    }
+    return data;
+}
+
+bool Storage::clearSyncFile() {
+    // Delete /sync.csv
+    if (xSemaphoreTake(_mutex, portMAX_DELAY)) {
+        bool result = LittleFS.remove("/sync.csv");
         xSemaphoreGive(_mutex);
         return result;
     }

@@ -7,89 +7,125 @@
 #define HX711_DOUT_PIN 4
 #define HX711_SCK_PIN 5
 
+// Global state
 ConnectionManager connection("Hydroholic");
-Storage stockage("/data.csv");
+Storage storage("/data.csv");
 LoadCell loadCell(HX711_DOUT_PIN, HX711_SCK_PIN, 2280.0);
-bool syncDone = false;
+
+// Bool assignments are atomic on ESP32 - no need for mutex
+// Volatile prevents compiler from optimizing and caching the value
+volatile bool isTimeSynched = false;  // Set by BLE characteristic onWrite callback
+volatile bool isSyncing = false;      // Set when we start sending sync.csv to client
+
 
 void TaskCapteur(void * pvParameters) {
     unsigned long lastSaveTime = 0;
-
     for(;;) {
         loadCell.measureWeight();
         float currentWeight = loadCell.getWeight();
         
-        Serial.print("Poids mesuré (Core 0) : ");
+        Serial.print("Measured weight (Core 0) : ");
         Serial.println(currentWeight);
 
-        // Stockage local
-        if (millis() - lastSaveTime > 60000) { 
-            time_t now;
-            time(&now);
-            stockage.append((uint32_t)now, loadCell.getWeight());
-            lastSaveTime = millis();
-        }
-        vTaskDelay(500 / portTICK_PERIOD_MS); 
+        time_t now;
+        time(&now);
+        // Store with isTimeSynched - volatile read is sufficient for bool
+        storage.append((uint32_t)now, currentWeight, isTimeSynched);
+
+        vTaskDelay(500 / portTICK_PERIOD_MS);
     }
 }
 
 void setup() {
     Serial.begin(115200);
 
-    if (!stockage.begin()) {
-        Serial.println("ERREUR : Impossible d'initialiser LittleFS");
+    if (!storage.begin()) {
+        Serial.println("Error at LittleFS startup");
     }
 
     loadCell.begin();
-    connection.begin(); 
+    connection.begin(&storage, (bool*)&isTimeSynched);
 
     xTaskCreatePinnedToCore(TaskCapteur, "TaskCapteur", 10000, NULL, 1, NULL, 0);
 
-    Serial.println("Système Hydroholic prêt !");
+    Serial.println("Hydroholic system ready");
 }
 
 void loop() {
-    if (connection.isConnected()) {
-        if (!syncDone) {
-            // we rename the file to sync.csv to indicate that it's being sent and to avoid conflicts if we want to keep recording new data while sending the history
-            if (LittleFS.exists("/data.csv")) {
-                LittleFS.rename("/data.csv", "/sync.csv");
-                Serial.println("Fichier renommé en sync.csv pour envoi.");
-            }
+    // For the loop, we define 4 main states based on connection and sync status:
 
-            // we open the sync file and send it 
-            File syncFile = LittleFS.open("/sync.csv", "r");
-            if (syncFile) {
-                Serial.println("Envoi de l'historique ligne par ligne...");
-                
-                while (syncFile.available()) {
-                    // we read line by line to avoid sending too much data at once and overwhelming the BLE connection
-                    String line = syncFile.readStringUntil('\n');
-                    
-    
-                    connection.sendHistoryChunk("HIST:" + line + "\n");
-                    
-                    // little delay to avoid overwhelming the BLE connection, especially if the history is long
-                    delay(40); 
-                }
-                syncFile.close();
-                syncDone = true;
-                Serial.println("Fin de l'envoi. En attente du OK...");
-            }
+    // State 1: Not connected - wait for connection
+    if (!connection.isConnected()) {
+        // Reset sync flag on disconnect
+        if (isSyncing) {
+            isSyncing = false;
+            Serial.println("Disconnected. Sync cancelled.");
         }
-
-        // if we received the OK signal from the client, we can clear the storage
-        if (connection.shouldClearStorage) {
-            LittleFS.remove("/sync.csv"); // we delete the sync file, just in case
-            connection.shouldClearStorage = false;
-            Serial.println("Historique synchronisé et supprimé !");
-        }
-
-        // send current weight for real-time display
-        connection.updateWeight(loadCell.getWeight());
-
-    } else {
-        syncDone = false;
+        delay(100);
+        return;
     }
+
+    // STATE 2: Connected but NOT time synched - wait for time sync packet from client
+    if (!isTimeSynched) {
+        Serial.println("Waiting for time synchronization packet");
+        delay(1000);
+        return;
+    }
+
+    // STATE 3: Connected and time synched, but NOT YET syncing - prepare sync
+    if (isTimeSynched && !isSyncing) {
+        Serial.println("Time synchronized! Preparing to send historical data");
+        
+        // Migrate: temp.csv (with relative timestamps) → data.csv (with real timestamps)
+        // Note: migrateTempFiles is called by the BLE callback, so this is already done
+        // But we do it here safely in case of edge cases
+        
+        // Rename data.csv → sync.csv for transmission
+        if (storage.prepareDataForSync()) {
+            isSyncing = true;
+            Serial.println("Ready to send data");
+        } else {
+            Serial.println("No data to send or error preparing data for sync");
+        }
+        
+        delay(100);
+        return;
+    }
+
+    // STATE 4: Connected, synched, and currently syncing - send data line by line
+    if (isSyncing) {
+        String syncData = storage.readSyncFile();
+        
+        if (syncData.length() > 0) {
+            Serial.println("Sending historical data line by line");
+            
+            // Split and send line by line
+            int lineStart = 0;
+            while (lineStart < syncData.length()) {
+                int lineEnd = syncData.indexOf('\n', lineStart);
+                if (lineEnd == -1) lineEnd = syncData.length();
+                
+                String line = syncData.substring(lineStart, lineEnd);
+                if (line.length() > 0) {
+                    connection.sendHistoryChunk("HIST:" + line + "\n");
+                    delay(40); // Small delay to avoid overwhelming BLE
+                }
+                lineStart = lineEnd + 1;
+            }
+            Serial.println("Finished sending data. Waiting for client confirmation");
+        }
+        
+        // Wait for client to confirm receipt via shouldClearStorage flag
+        if (connection.shouldClearStorage) {
+            storage.clearSyncFile();
+            connection.shouldClearStorage = false;
+            isSyncing = false;
+            Serial.println("Historical data synchronized and deleted!");
+        }
+    }
+
+    // Send current weight for real-time display (non-blocking)
+    connection.updateWeight(loadCell.getWeight());
+    
     delay(1000);
 }

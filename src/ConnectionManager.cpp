@@ -10,29 +10,29 @@ ConnectionManager::ConnectionManager(const char* deviceName) : _deviceName(devic
 void ConnectionManager::TimeCallbacks::onWrite(BLECharacteristic* pChar) {
     std::string value = pChar->getValue();
     if (value.length() > 0) {
-
-        if (value == "OK") {
-            Serial.println("Confirmation reçue !");
-            // Ici, il faudra prévenir le main.cpp de vider le storage
-            // On peut utiliser un flag global ou un callback
-            _manager->shouldClearStorage = true;
-            return; 
-        }
-        // Le client envoie l'Epoch Unix sous forme de string
+        // Client sends Epoch time as a string, we convert it to long
         long epochTime = atol(value.c_str());
+        long startTime = epochTime - (millis() / 1000);
+        
+        *_manager->_isSynched = true;
 
-        // On synchronise l'horloge interne (RTC) de l'ESP32
+        _manager->_storage->migrateTempFiles(startTime);
+
+        // We synchronize the ESP32 time with the received epoch time
         struct timeval tv;
-        tv.tv_sec = epochTime; 
+        tv.tv_sec = epochTime;
         tv.tv_usec = 0;
         settimeofday(&tv, NULL);
 
-        Serial.print("Heure synchronisée via BLE ! Epoch : ");
+        Serial.print("Time synchronized. Epoch : ");
         Serial.println(epochTime);
     }
 }
 
-void ConnectionManager::begin() {
+void ConnectionManager::begin(Storage* storage, bool* isSynched) {
+    this->_storage = storage;
+    this->_isSynched = isSynched;
+    
     BLEDevice::init(_deviceName);
     _pServer = BLEDevice::createServer();
     _pServer->setCallbacks(new ServerCallbacks(this));
@@ -45,7 +45,7 @@ void ConnectionManager::begin() {
         BLECharacteristic::PROPERTY_NOTIFY
     );
 
-    // Ajout du descripteur pour activer les notifications (obligatoire pour Web ConnectionManager/iOS)
+    // Add a descriptor to enable notifications on the client side
     _pWeightChar->addDescriptor(new BLE2902());
     _pWeightChar->setValue("-1.0");
 
@@ -69,15 +69,15 @@ void ConnectionManager::begin() {
     pAdvertising->setMinPreferred(0x12);
     BLEDevice::startAdvertising();
     
-    Serial.println("ConnectionManager : Prêt et visible !");
+    Serial.println("ConnectionManager ready and advertising");
 }
 
 void ConnectionManager::updateWeight(float weight) {
     if (_deviceConnected) {
         char buffer[10];
-        dtostrf(weight, 4, 2, buffer); // Conversion float -> texte
+        dtostrf(weight, 4, 2, buffer); // Conversion float -> text
         _pWeightChar->setValue(buffer);
-        _pWeightChar->notify(); // Envoie la notif au site web
+        _pWeightChar->notify(); // Send notification to client
     }
 }
 
@@ -89,7 +89,8 @@ void ConnectionManager::sendHistoryChunk(String chunk) {
     if (_deviceConnected) {
         _pWeightChar->setValue(chunk.c_str());
         _pWeightChar->notify();
-        // On laisse un petit délai pour que le téléphone puisse digérer
+
+        // Small delay to ensure the client has time to process the notification
         delay(50); 
     }
 }
