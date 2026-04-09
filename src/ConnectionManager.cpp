@@ -7,6 +7,11 @@
 
 ConnectionManager::ConnectionManager(const char* deviceName) : _deviceName(deviceName) {}
 
+/**
+ * @brief Callback function for handling write requests to the time characteristic
+ * 
+ * @param pChar Pointer to the BLE characteristic that received the write request. The value is expected to be a string representing the epoch time or "OK" for confirmation.
+ */
 void ConnectionManager::TimeCallbacks::onWrite(BLECharacteristic* pChar) {
     std::string value = pChar->getValue();
     if (value.length() > 0) {
@@ -16,7 +21,7 @@ void ConnectionManager::TimeCallbacks::onWrite(BLECharacteristic* pChar) {
             _manager->shouldClearStorage = true; 
             return; 
         }
-        // Client sends Epoch time as a string, we convert it to long
+        // Client sends Epoch UNIX time as a string, we convert it to long
         long epochTime = atol(value.c_str());
         long startTime = epochTime - (millis() / 1000);
         

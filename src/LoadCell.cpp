@@ -1,6 +1,9 @@
 #include "LoadCell.h"
 
 void LoadCell::begin() {
+    pinMode(_enablePin, OUTPUT);
+    turnOn(); // Ensure the HX711 is powered on before initialization
+
     scale.begin(_doutPin, _sckPin);
     scale.set_scale(calibration_factor);
     scale.tare(); // Tare the scale to zero
@@ -8,14 +11,14 @@ void LoadCell::begin() {
 }
 
 void LoadCell::measureWeight() {
-    // Read multiple samples for median filtering
-    for (int i = 0; i < 11; i++) {
-        samples[i] = scale.get_units(10); // Average of 10 readings for stability
-      }
+        // Read a reduced number of samples to avoid long blocking periods
+        for (int i = 0; i < NUM_SAMPLES; i++) {
+                samples[i] = scale.get_units(3); // Smaller per-read averaging for responsiveness
+        }
 
-    // Sort the samples to find the median
-    std::sort(samples, samples + 11);
-      float median = samples[5]; // The middle value after sorting
+        // Sort the samples to find the median
+        std::sort(samples, samples + NUM_SAMPLES);
+        float median = samples[NUM_SAMPLES / 2]; // Middle value after sorting (median)
 
     // Update EMA value
     if (emaValue == 0) {
@@ -23,4 +26,12 @@ void LoadCell::measureWeight() {
     } else {
         emaValue = (EMA_ALPHA * median) + ((1 - EMA_ALPHA) * emaValue);
     }
+}
+
+void LoadCell::turnOn() {
+    digitalWrite(_enablePin, HIGH); // Enable the HX711
+}
+
+void LoadCell::turnOff() {
+    digitalWrite(_enablePin, LOW); // Disable the HX711 to save power
 }

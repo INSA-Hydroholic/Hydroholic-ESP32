@@ -24,21 +24,29 @@ bool Storage::append(uint32_t timestamp, float value, bool isSynched) {
 
     if (xSemaphoreTake(_mutex, portMAX_DELAY)) {
 
+        // Ensure the file exists (create if necessary). If open fails, try remounting once.
         if (!LittleFS.exists(targetFile)) {
             File testFile = LittleFS.open(targetFile, "w");
             if (testFile) {
                 testFile.close();
             } else {
-                vTaskDelay(50 / portTICK_PERIOD_MS);
+                // Try remounting FS then retry file creation once
+                vTaskDelay(20 / portTICK_PERIOD_MS);
+                LittleFS.end();
+                LittleFS.begin(false);
+                vTaskDelay(20 / portTICK_PERIOD_MS);
                 testFile = LittleFS.open(targetFile, "w");
                 if (testFile) testFile.close();
             }
         }
-        
+
         File file = LittleFS.open(targetFile, "a");
         if (!file) {
-            // Si l'ouverture échoue, on tente une deuxième fois après un micro-délai
-            vTaskDelay(50 / portTICK_PERIOD_MS);
+            // Try remounting and retry once
+            vTaskDelay(20 / portTICK_PERIOD_MS);
+            LittleFS.end();
+            LittleFS.begin(false);
+            vTaskDelay(20 / portTICK_PERIOD_MS);
             file = LittleFS.open(targetFile, "a");
         }
         
@@ -62,6 +70,13 @@ String Storage::readAll() {
     String data = "";
     if (xSemaphoreTake(_mutex, portMAX_DELAY)) {
         File file = LittleFS.open(_filename, "r");
+        if (!file) {
+            // Try remount once then retry
+            LittleFS.end();
+            LittleFS.begin(false);
+            vTaskDelay(10 / portTICK_PERIOD_MS);
+            file = LittleFS.open(_filename, "r");
+        }
         if (file) {
             while (file.available()) {
                 data += file.readStringUntil('\n');
@@ -93,6 +108,16 @@ void Storage::migrateTempFiles(long startTime) {
 
         File tempFile = LittleFS.open("/temp.csv", "r");
         File dataFile = LittleFS.open("/data.csv", "a");
+        if (!tempFile || !dataFile) {
+            // Try remount and retry once
+            if (tempFile) tempFile.close();
+            if (dataFile) dataFile.close();
+            LittleFS.end();
+            LittleFS.begin(false);
+            vTaskDelay(10 / portTICK_PERIOD_MS);
+            tempFile = LittleFS.open("/temp.csv", "r");
+            dataFile = LittleFS.open("/data.csv", "a");
+        }
 
         if (!tempFile || !dataFile) {
             if (tempFile) tempFile.close();
@@ -127,10 +152,19 @@ bool Storage::prepareDataForSync() {
     // Rename /data.csv to /sync.csv for sending to client
     if (xSemaphoreTake(_mutex, portMAX_DELAY)) {
         if (LittleFS.exists("/data.csv")) {
-            LittleFS.rename("/data.csv", "/sync.csv");
-            xSemaphoreGive(_mutex);
-            Serial.println("Fichier renommé en sync.csv pour envoi.");
-            return true;
+            bool ok = LittleFS.rename("/data.csv", "/sync.csv");
+            if (!ok) {
+                // Try remount and retry rename once
+                LittleFS.end();
+                LittleFS.begin(false);
+                vTaskDelay(10 / portTICK_PERIOD_MS);
+                ok = LittleFS.rename("/data.csv", "/sync.csv");
+            }
+            if (ok) {
+                xSemaphoreGive(_mutex);
+                Serial.println("Fichier renommé en sync.csv pour envoi.");
+                return true;
+            }
         }
         xSemaphoreGive(_mutex);
     }
@@ -142,6 +176,13 @@ bool Storage::clearSyncFile() {
     // Delete /sync.csv
     if (xSemaphoreTake(_mutex, portMAX_DELAY)) {
         bool result = LittleFS.remove("/sync.csv");
+        if (!result) {
+            // Try remount and retry once
+            LittleFS.end();
+            LittleFS.begin(false);
+            vTaskDelay(10 / portTICK_PERIOD_MS);
+            result = LittleFS.remove("/sync.csv");
+        }
         xSemaphoreGive(_mutex);
         return result;
     }

@@ -3,17 +3,18 @@
 #include "ConnectionManager.h"
 #include "Storage.h"
 
-#define HX711_DOUT_PIN 4
-#define HX711_SCK_PIN 5
+#define HX711_DOUT_PIN 14
+#define HX711_SCK_PIN 27
+#define HX711_ENABLE_PIN 26
 
 ConnectionManager connection("Hydroholic");
 Storage storage("/data.csv");
-LoadCell loadCell(HX711_DOUT_PIN, HX711_SCK_PIN, 2280.0);
+LoadCell loadCell(HX711_DOUT_PIN, HX711_SCK_PIN, HX711_ENABLE_PIN, 2280.0);
 
 volatile bool isTimeSynched = false;
 volatile bool isSyncing = false;
 volatile bool isWaitingForConfirm = false; 
-volatile bool isStorageReady = false;      
+volatile bool isStorageReady = false;
 volatile float globalWeight = 0.0;
 
 void TaskCapteur(void * pvParameters) {
@@ -27,6 +28,11 @@ void TaskCapteur(void * pvParameters) {
             lastSaveTime = millis(); 
             time_t now;
             time(&now);
+            Serial.print("Poids mesuré : ");
+            Serial.print(globalWeight);
+            Serial.print(" - Heure : ");
+            Serial.println((uint32_t)now);
+
             if (!storage.append((uint32_t)now, globalWeight, isTimeSynched)) {
                 Serial.println("Archive reportée (FS occupé)");
             } else {
@@ -48,7 +54,8 @@ void setup() {
 
     loadCell.begin();
     connection.begin(&storage, (bool*)&isTimeSynched);
-    xTaskCreatePinnedToCore(TaskCapteur, "TaskCapteur", 10000, NULL, 1, NULL, 0);
+    // Run the sensor task on core 1 so it can't starve the core-0 Idle/Watchdog
+    xTaskCreatePinnedToCore(TaskCapteur, "TaskCapteur", 10000, NULL, 1, NULL, 1);
 }
 
 void loop() {
@@ -77,7 +84,6 @@ void loop() {
     }
 
     // STATE 4 : Envoi streaming
-    // Dans main.cpp - STATE 4
     if (isSyncing) {
         File f = LittleFS.open("/sync.csv", "r"); 
         if (f) {
