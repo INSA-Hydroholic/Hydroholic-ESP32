@@ -52,6 +52,19 @@ void setup() {
         Serial.println("ERREUR : LittleFS HS");
     }
 
+    // Ensure required files exist before starting tasks to avoid creation races
+    if (isStorageReady) {
+        if (!LittleFS.exists("/data.csv")) {
+            File fd = LittleFS.open("/data.csv", "a");
+            if (fd) fd.close();
+        }
+        if (!LittleFS.exists("/temp.csv")) {
+            File ft = LittleFS.open("/temp.csv", "a");
+            if (ft) ft.close();
+        }
+    }
+
+    pinMode(2, OUTPUT); // Builtin LED for status indication
     loadCell.begin();
     connection.begin(&storage, (bool*)&isTimeSynched);
     // Run the sensor task on core 1 so it can't starve the core-0 Idle/Watchdog
@@ -62,9 +75,12 @@ void loop() {
     if (!connection.isConnected()) {
         isSyncing = false;
         isWaitingForConfirm = false;
+        // Blink builtin LED to indicate waiting for connection
+        digitalWrite(2, millis() / 500 % 2);
         delay(100);
         return;
     }
+    digitalWrite(2, LOW); // Turn off LED when connected
 
     // STATE 2 : Attente de l'heure
     if (!isTimeSynched) {

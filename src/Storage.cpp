@@ -91,7 +91,19 @@ String Storage::readAll() {
 
 bool Storage::clear() {
     if (xSemaphoreTake(_mutex, portMAX_DELAY)) {
-        bool result = LittleFS.remove(_filename);
+        bool result = false;
+        File f = LittleFS.open(_filename, "w");
+        if (f) {
+            f.close();
+            result = true;
+        } else {
+            // Try remount and retry once
+            LittleFS.end();
+            LittleFS.begin(false);
+            vTaskDelay(10 / portTICK_PERIOD_MS);
+            f = LittleFS.open(_filename, "w");
+            if (f) { f.close(); result = true; }
+        }
         xSemaphoreGive(_mutex);
         return result;
     }
@@ -141,10 +153,21 @@ void Storage::migrateTempFiles(long startTime) {
 
         tempFile.close();
         dataFile.close();
-        LittleFS.remove("/temp.csv"); 
-        
+        // Truncate temp file instead of removing it to avoid permission/creation races
+        File t = LittleFS.open("/temp.csv", "w");
+        if (t) {
+            t.close();
+        } else {
+            // Try remount and retry once
+            LittleFS.end();
+            LittleFS.begin(false);
+            vTaskDelay(10 / portTICK_PERIOD_MS);
+            t = LittleFS.open("/temp.csv", "w");
+            if (t) t.close();
+        }
+
         xSemaphoreGive(_mutex);
-        Serial.println("Migration terminée. temp.csv supprimé.");
+        Serial.println("Migration terminée. temp.csv vidé.");
     }
 }
 
@@ -161,6 +184,18 @@ bool Storage::prepareDataForSync() {
                 ok = LittleFS.rename("/data.csv", "/sync.csv");
             }
             if (ok) {
+                // Create an empty /data.csv immediately so other tasks can continue appending
+                File newData = LittleFS.open("/data.csv", "w");
+                if (newData) {
+                    newData.close();
+                } else {
+                    // Try remount and retry once
+                    LittleFS.end();
+                    LittleFS.begin(false);
+                    vTaskDelay(10 / portTICK_PERIOD_MS);
+                    newData = LittleFS.open("/data.csv", "w");
+                    if (newData) newData.close();
+                }
                 xSemaphoreGive(_mutex);
                 Serial.println("Fichier renommé en sync.csv pour envoi.");
                 return true;
@@ -175,13 +210,18 @@ bool Storage::prepareDataForSync() {
 bool Storage::clearSyncFile() {
     // Delete /sync.csv
     if (xSemaphoreTake(_mutex, portMAX_DELAY)) {
-        bool result = LittleFS.remove("/sync.csv");
-        if (!result) {
+        bool result = false;
+        File f = LittleFS.open("/sync.csv", "w");
+        if (f) {
+            f.close();
+            result = true;
+        } else {
             // Try remount and retry once
             LittleFS.end();
             LittleFS.begin(false);
             vTaskDelay(10 / portTICK_PERIOD_MS);
-            result = LittleFS.remove("/sync.csv");
+            f = LittleFS.open("/sync.csv", "w");
+            if (f) { f.close(); result = true; }
         }
         xSemaphoreGive(_mutex);
         return result;
