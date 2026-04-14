@@ -110,6 +110,7 @@ void ConnectionManager::begin(Storage* storage, volatile bool* isSynched, LoadCe
     this->_isSynched = isSynched;
     
     BLEDevice::init(_deviceName);
+    BLEDevice::setMTU(185);
     _pServer = BLEDevice::createServer();
     _pServer->setCallbacks(new ServerCallbacks(this));
 
