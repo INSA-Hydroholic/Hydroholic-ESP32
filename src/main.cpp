@@ -27,14 +27,13 @@ void TaskCapteur(void * pvParameters) {
         
         if (isStorageReady && (millis() - lastSaveTime > 60000)) {
             lastSaveTime = millis(); 
-            time_t now;
-            time(&now);
+            uint32_t timestamp = isTimeSynched ? (uint32_t)time(nullptr) : (uint32_t)(millis() / 1000);
             Serial.print("Poids mesuré : ");
             Serial.print(globalWeight);
             Serial.print(" - Heure : ");
-            Serial.println((uint32_t)now);
+            Serial.println(timestamp);
 
-            if (!storage.append((uint32_t)now, globalWeight, isTimeSynched)) {
+            if (!storage.append(timestamp, globalWeight, isTimeSynched)) {
                 Serial.println("Archive reportée (FS occupé)");
             } else {
                 Serial.println("Donnée archivée.");
@@ -100,7 +99,7 @@ void setup() {
         Serial.println("Could not open config.csv for reading.");
     }
 
-    connection.begin(&storage, (bool*)&isTimeSynched, &loadCell);
+    connection.begin(&storage, &isTimeSynched, &loadCell);
     // Run the sensor task on core 1 so it can't starve the core-0 Idle/Watchdog
     xTaskCreatePinnedToCore(TaskCapteur, "TaskCapteur", 10000, NULL, 1, NULL, 1);
 }

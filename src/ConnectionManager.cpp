@@ -89,22 +89,22 @@ void ConnectionManager::TimeCallbacks::onWrite(BLECharacteristic* pChar) {
         }
         long startTime = epochTime - (millis() / 1000);
         
-        *_manager->_isSynched = true;
-
-        _manager->_storage->migrateTempFiles(startTime);
-
         // We synchronize the ESP32 time with the received epoch time
         struct timeval tv;
         tv.tv_sec = epochTime;
         tv.tv_usec = 0;
         settimeofday(&tv, NULL);
 
+        *_manager->_isSynched = true;
+
+        _manager->_storage->migrateTempFiles(startTime);
+
         Serial.print("Time synchronized. Epoch : ");
         Serial.println(epochTime);
     }
 }
 
-void ConnectionManager::begin(Storage* storage, bool* isSynched, LoadCell* loadCell) {
+void ConnectionManager::begin(Storage* storage, volatile bool* isSynched, LoadCell* loadCell) {
     this->_storage = storage;
     this->_loadCell = loadCell;
     this->_isSynched = isSynched;

@@ -13,7 +13,7 @@ class ConnectionManager {
 public:
     ConnectionManager(const char* deviceName = "Hydroholic");
 
-    void begin(Storage* storage, bool* isSynched, LoadCell* loadCell); // setup
+    void begin(Storage* storage, volatile bool* isSynched, LoadCell* loadCell); // setup
 
     void updateWeight(float weight);
     
@@ -22,7 +22,7 @@ public:
     void sendHistoryChunk(String chunk);
     void sendScaleFactor();
 
-    bool shouldClearStorage = false; // Flag to indicate when the storage should be cleared after successful sync
+    volatile bool shouldClearStorage = false; // Flag to indicate when the storage should be cleared after successful sync
 
 private:
     const char* _deviceName;
@@ -31,8 +31,8 @@ private:
     BLECharacteristic* _pTimeChar;
     Storage * _storage;
     LoadCell * _loadCell = nullptr;
-    bool* _isSynched;
-    bool _deviceConnected = false;
+    volatile bool* _isSynched;
+    volatile bool _deviceConnected = false;
 
     // Callbacks to detect connection/disconnection
     class ServerCallbacks : public BLEServerCallbacks {
