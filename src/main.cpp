@@ -63,10 +63,43 @@ void setup() {
             File ft = LittleFS.open("/temp.csv", "a");
             if (ft) ft.close();
         }
+        if (!LittleFS.exists("/config.csv")) {  // Create an empty config file if it doesn't exist
+            File fs = LittleFS.open("/config.csv", "a");
+            // Set default calibration factor in config.csv if it doesn't exist
+            if (fs) {
+                fs.println("CALIB_FACTOR:2280.0");
+                fs.close();
+            } else {
+                Serial.println("ERREUR : Impossible de créer config.csv");
+            }
+        }
     }
 
     pinMode(2, OUTPUT); // Builtin LED for status indication
     loadCell.begin();
+
+    // Search for existing calibration factor in config.csv
+    File configFile = LittleFS.open("/config.csv", "r");
+    if (configFile) {
+        String line = configFile.readStringUntil('\n');
+        configFile.close();
+        if (line.startsWith("CALIB_FACTOR:")) {
+            String factorStr = line.substring(line.indexOf(':') + 1);
+            float factor = factorStr.toFloat();
+            if (factor > 0) {
+                loadCell.setCalibrationFactor(factor);
+                Serial.print("Calibration factor loaded from config: ");
+                Serial.println(factor, 6);
+            } else {
+                Serial.println("Invalid calibration factor in config.csv, using default.");
+            }
+        } else {
+            Serial.println("No calibration factor found in config.csv, using default.");
+        }
+    } else {
+        Serial.println("Could not open config.csv for reading.");
+    }
+
     connection.begin(&storage, (bool*)&isTimeSynched, &loadCell);
     // Run the sensor task on core 1 so it can't starve the core-0 Idle/Watchdog
     xTaskCreatePinnedToCore(TaskCapteur, "TaskCapteur", 10000, NULL, 1, NULL, 1);

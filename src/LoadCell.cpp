@@ -32,6 +32,37 @@ void LoadCell::tare() {
     }
 }
 
+bool LoadCell::setCalibrationFactor(float factor) {
+    if (factor <= 0.0f) {
+        return false;
+    }
+
+    if (_scaleMutex) {
+        xSemaphoreTake(_scaleMutex, portMAX_DELAY);
+    }
+
+    calibration_factor = factor;
+    scale.set_scale(calibration_factor);
+
+    if (_scaleMutex) {
+        xSemaphoreGive(_scaleMutex);
+    }
+
+    return true;
+}
+
+float LoadCell::getCalibrationFactor() {
+    float factor = calibration_factor;
+
+    if (_scaleMutex) {
+        xSemaphoreTake(_scaleMutex, portMAX_DELAY);
+        factor = calibration_factor;
+        xSemaphoreGive(_scaleMutex);
+    }
+
+    return factor;
+}
+
 void LoadCell::measureWeight() {
         if (_scaleMutex) {
                 xSemaphoreTake(_scaleMutex, portMAX_DELAY);

@@ -18,7 +18,7 @@ class LoadCell {
     float samples[NUM_SAMPLES];               // Array to store multiple readings for post-processing (reduced for responsiveness)
     float emaValue;                 // Variable to store the current EMA (exponential moving average) value
     bool emaInitialized;
-    const float EMA_ALPHA = 0.1;    // Smoothing factor for EMA
+    const float EMA_ALPHA = 0.5;    // Smoothing factor for EMA (0 < EMA_ALPHA <= 1, smaller is smoother but less responsive)
     SemaphoreHandle_t _scaleMutex;
 
   public:
@@ -29,6 +29,8 @@ class LoadCell {
     void turnOn();
     void turnOff();
     void tare();
+    bool setCalibrationFactor(float factor);
+    float getCalibrationFactor();
     void measureWeight();   // Handles reading, median filtering, and EMA calculation
     float getWeight() { return emaValue; } // Returns the smoothed weight value
     

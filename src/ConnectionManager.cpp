@@ -29,6 +29,57 @@ void ConnectionManager::TimeCallbacks::onWrite(BLECharacteristic* pChar) {
             }
             return;
         }
+
+        if (value == "GET_SCALE" || value == "SCALE?") {
+            _manager->sendScaleFactor();
+            Serial.println("Commande reçue : envoi du facteur de calibration.");
+            return;
+        }
+
+        const std::string setScalePrefix = "SET_SCALE:";
+        if (value.rfind(setScalePrefix, 0) == 0) {
+            if (!_manager->_loadCell) {
+                Serial.println("Erreur : loadCell indisponible pour SET_SCALE.");
+                return;
+            }
+
+            std::string factorPart = value.substr(setScalePrefix.length());
+            char* endPtr = nullptr;
+            float newFactor = strtof(factorPart.c_str(), &endPtr);
+
+            if (endPtr == factorPart.c_str() || *endPtr != '\0' || newFactor <= 0.0f) {
+                Serial.println("SET_SCALE invalide : valeur non numerique ou <= 0.");
+                if (_manager->_deviceConnected) {
+                    _manager->_pWeightChar->setValue("SCALE:ERROR");
+                    _manager->_pWeightChar->notify();
+                }
+                return;
+            }
+
+            bool updated = _manager->_loadCell->setCalibrationFactor(newFactor);
+            if (!updated) {
+                Serial.println("Echec SET_SCALE: facteur invalide.");
+                if (_manager->_deviceConnected) {
+                    _manager->_pWeightChar->setValue("SCALE:ERROR");
+                    _manager->_pWeightChar->notify();
+                }
+                return;
+            }
+            // Update the stored calibration factor in config.csv
+            File configFile = LittleFS.open("/config.csv", "w");
+            if (configFile) {
+                configFile.printf("CALIB_FACTOR:%.6f\n", newFactor);
+                configFile.close();
+            } else {
+                Serial.println("ERREUR : Impossible d'ouvrir config.csv pour mise à jour du facteur de calibration.");
+            }
+
+            Serial.print("Nouveau facteur de calibration applique: ");
+            Serial.println(newFactor, 6);
+            _manager->sendScaleFactor();
+            return;
+        }
+
         // Client sends Epoch UNIX time as a string, we convert it to long
         char* endPtr = nullptr;
         long epochTime = strtol(value.c_str(), &endPtr, 10);
@@ -118,4 +169,16 @@ void ConnectionManager::sendHistoryChunk(String chunk) {
         // Small delay to ensure the client has time to process the notification
         delay(50); 
     }
+}
+
+void ConnectionManager::sendScaleFactor() {
+    if (!_deviceConnected || !_loadCell) {
+        return;
+    }
+
+    char payload[40];
+    float factor = _loadCell->getCalibrationFactor();
+    snprintf(payload, sizeof(payload), "SCALE:%.6f", factor);
+    _pWeightChar->setValue(payload);
+    _pWeightChar->notify();
 }
