@@ -1,4 +1,5 @@
 #include "ConnectionManager.h"
+#include "LoadCell.h"
 #include <sys/time.h>
 
 #define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
@@ -21,8 +22,20 @@ void ConnectionManager::TimeCallbacks::onWrite(BLECharacteristic* pChar) {
             _manager->shouldClearStorage = true; 
             return; 
         }
+        if (value == "TARE") {
+            if (_manager->_loadCell) {
+                _manager->_loadCell->tare();
+                Serial.println("Commande reçue : tare de la balance effectuée.");
+            }
+            return;
+        }
         // Client sends Epoch UNIX time as a string, we convert it to long
-        long epochTime = atol(value.c_str());
+        char* endPtr = nullptr;
+        long epochTime = strtol(value.c_str(), &endPtr, 10);
+        if (endPtr == value.c_str() || *endPtr != '\0') {
+            Serial.println("Commande BLE inconnue ignorée.");
+            return;
+        }
         long startTime = epochTime - (millis() / 1000);
         
         *_manager->_isSynched = true;
@@ -40,8 +53,9 @@ void ConnectionManager::TimeCallbacks::onWrite(BLECharacteristic* pChar) {
     }
 }
 
-void ConnectionManager::begin(Storage* storage, bool* isSynched) {
+void ConnectionManager::begin(Storage* storage, bool* isSynched, LoadCell* loadCell) {
     this->_storage = storage;
+    this->_loadCell = loadCell;
     this->_isSynched = isSynched;
     
     BLEDevice::init(_deviceName);

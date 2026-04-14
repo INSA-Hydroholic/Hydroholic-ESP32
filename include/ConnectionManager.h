@@ -7,11 +7,13 @@
 #include <time.h> // to synchronize time via BLE
 #include "Storage.h"
 
+class LoadCell;
+
 class ConnectionManager {
 public:
     ConnectionManager(const char* deviceName = "Hydroholic");
 
-    void begin(Storage* storage, bool* isSynched); // setup
+    void begin(Storage* storage, bool* isSynched, LoadCell* loadCell); // setup
 
     void updateWeight(float weight);
     
@@ -27,6 +29,7 @@ private:
     BLECharacteristic* _pWeightChar;
     BLECharacteristic* _pTimeChar;
     Storage * _storage;
+    LoadCell * _loadCell = nullptr;
     bool* _isSynched;
     bool _deviceConnected = false;
 

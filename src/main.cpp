@@ -21,8 +21,9 @@ void TaskCapteur(void * pvParameters) {
     unsigned long lastSaveTime = 0;
     for(;;) {
         loadCell.measureWeight();
-        globalWeight = loadCell.getWeight(); 
-        
+        globalWeight = loadCell.getWeight();
+        Serial.print("Poids actuel : ");
+        Serial.println(globalWeight);
         
         if (isStorageReady && (millis() - lastSaveTime > 60000)) {
             lastSaveTime = millis(); 
@@ -39,7 +40,7 @@ void TaskCapteur(void * pvParameters) {
                 Serial.println("Donnée archivée.");
             }
         }
-        vTaskDelay(500 / portTICK_PERIOD_MS);
+        vTaskDelay(500 / portTICK_PERIOD_MS);  // Run every 500 ms
     }
 }
 
@@ -66,7 +67,7 @@ void setup() {
 
     pinMode(2, OUTPUT); // Builtin LED for status indication
     loadCell.begin();
-    connection.begin(&storage, (bool*)&isTimeSynched);
+    connection.begin(&storage, (bool*)&isTimeSynched, &loadCell);
     // Run the sensor task on core 1 so it can't starve the core-0 Idle/Watchdog
     xTaskCreatePinnedToCore(TaskCapteur, "TaskCapteur", 10000, NULL, 1, NULL, 1);
 }
