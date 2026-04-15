@@ -1,15 +1,18 @@
 #include <Arduino.h>
 #include "LoadCell.h"
 #include "ConnectionManager.h"
+#include "BatteryManager.h"
 #include "Storage.h"
 
 #define HX711_DOUT_PIN 14
 #define HX711_SCK_PIN 27
 #define HX711_ENABLE_PIN 26
+#define BATTERY_ADC_PIN 34
 
 ConnectionManager connection("Hydroholic");
 Storage storage("/data.csv");
 LoadCell loadCell(HX711_DOUT_PIN, HX711_SCK_PIN, HX711_ENABLE_PIN, 2280.0);
+BatteryManager batteryManager(BATTERY_ADC_PIN);
 
 volatile bool isTimeSynched = false;
 volatile bool isSyncing = false;
@@ -39,6 +42,16 @@ void TaskCapteur(void * pvParameters) {
                 Serial.println("Donnée archivée.");
             }
         }
+        vTaskDelay(500 / portTICK_PERIOD_MS);  // Run every 500 ms
+    }
+}
+
+void TaskBattery(void * pvParameters) {
+    for(;;) {
+        batteryManager.readBatteryLevel();
+        float level = batteryManager.getBatteryLevel();
+        Serial.print("Niveau de batterie : ");
+        Serial.println(level);
         vTaskDelay(500 / portTICK_PERIOD_MS);  // Run every 500 ms
     }
 }
@@ -76,6 +89,7 @@ void setup() {
 
     pinMode(2, OUTPUT); // Builtin LED for status indication
     loadCell.begin();
+    batteryManager.begin();
 
     // Search for existing calibration factor in config.csv
     File configFile = LittleFS.open("/config.csv", "r");
@@ -99,9 +113,10 @@ void setup() {
         Serial.println("Could not open config.csv for reading.");
     }
 
-    connection.begin(&storage, &isTimeSynched, &loadCell);
+    connection.begin(&storage, &isTimeSynched, &loadCell, &batteryManager);
     // Run the sensor task on core 1 so it can't starve the core-0 Idle/Watchdog
     xTaskCreatePinnedToCore(TaskCapteur, "TaskCapteur", 10000, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(TaskBattery, "TaskBattery", 10000, NULL, 1, NULL, 1);
 }
 
 void loop() {

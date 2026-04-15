@@ -30,6 +30,14 @@ void ConnectionManager::TimeCallbacks::onWrite(BLECharacteristic* pChar) {
             return;
         }
 
+        if (value == "GET_BATTERY" || value == "BATTERY?") {
+            if (_manager->_loadCell) {
+                _manager->sendHistoryChunk("BATTERY:" + String(_manager->_batteryManager->getBatteryLevel()));
+                Serial.println("Commande reçue : envoi du niveau de batterie.");
+            }
+            return;
+        }
+
         if (value == "GET_SCALE" || value == "SCALE?") {
             _manager->sendScaleFactor();
             Serial.println("Commande reçue : envoi du facteur de calibration.");
@@ -104,11 +112,12 @@ void ConnectionManager::TimeCallbacks::onWrite(BLECharacteristic* pChar) {
     }
 }
 
-void ConnectionManager::begin(Storage* storage, volatile bool* isSynched, LoadCell* loadCell) {
+void ConnectionManager::begin(Storage* storage, volatile bool* isSynched, LoadCell* loadCell, BatteryManager* batteryManager) {
     this->_storage = storage;
     this->_loadCell = loadCell;
     this->_isSynched = isSynched;
-    
+    this->_batteryManager = batteryManager;
+
     BLEDevice::init(_deviceName);
     BLEDevice::setMTU(185);
     _pServer = BLEDevice::createServer();

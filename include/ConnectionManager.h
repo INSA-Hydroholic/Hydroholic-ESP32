@@ -6,14 +6,14 @@
 #include <BLE2902.h> // Notifications
 #include <time.h> // to synchronize time via BLE
 #include "Storage.h"
-
+#include "BatteryManager.h"
 class LoadCell;
 
 class ConnectionManager {
 public:
     ConnectionManager(const char* deviceName = "Hydroholic");
 
-    void begin(Storage* storage, volatile bool* isSynched, LoadCell* loadCell); // setup
+    void begin(Storage* storage, volatile bool* isSynched, LoadCell* loadCell, BatteryManager* batteryManager); // setup
 
     void updateWeight(float weight);
     
@@ -31,6 +31,7 @@ private:
     BLECharacteristic* _pTimeChar;
     Storage * _storage;
     LoadCell * _loadCell = nullptr;
+    BatteryManager * _batteryManager = nullptr;
     volatile bool* _isSynched;
     volatile bool _deviceConnected = false;
 
