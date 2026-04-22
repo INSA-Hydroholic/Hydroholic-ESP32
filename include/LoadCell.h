@@ -7,6 +7,8 @@
 #include "freertos/semphr.h"
 
 #define NUM_SAMPLES 5
+#define STABILITY_SAMPLES 10
+#define STABILITY_THRESHOLD 1.0 // Threshold for considering the weight stable (in grams)
 
 class LoadCell {
   private:
@@ -14,12 +16,18 @@ class LoadCell {
     int _doutPin;
     int _sckPin;
     int _enablePin;
+    bool isStable = false;
+    int historyIndex = 0;           // Index of the next position to write in the history buffer
+    float history[STABILITY_SAMPLES];              // Circular buffer to store recent weight values for stability analysis
+    int historyCount = 0;           // Number of valid entries currently present in history
     float calibration_factor;
-    float samples[NUM_SAMPLES];               // Array to store multiple readings for post-processing (reduced for responsiveness)
+    float samples[NUM_SAMPLES];     // Array to store multiple readings for post-processing (reduced for responsiveness)
     float emaValue;                 // Variable to store the current EMA (exponential moving average) value
     bool emaInitialized;
     const float EMA_ALPHA = 0.5;    // Smoothing factor for EMA (0 < EMA_ALPHA <= 1, smaller is smoother but less responsive)
     SemaphoreHandle_t _scaleMutex;
+
+    void resetStabilityState();
 
   public:
     LoadCell(int doutPin, int sckPin, int enablePin, float calibFactor) 
@@ -32,8 +40,8 @@ class LoadCell {
     bool setCalibrationFactor(float factor);
     float getCalibrationFactor();
     void measureWeight();   // Handles reading, median filtering, and EMA calculation
-    float getWeight() { return emaValue; } // Returns the smoothed weight value
-    
+    float getWeight() const; // Returns the smoothed weight value
+    bool isStableWeight() const; // Returns whether the weight is currently considered stable
 };
 
 #endif // _LOADCELL_H_
