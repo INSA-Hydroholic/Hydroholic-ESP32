@@ -28,7 +28,7 @@ void TaskCapteur(void * pvParameters) {
         Serial.print("Poids actuel : ");
         Serial.println(globalWeight);
         
-        if (isStorageReady && (millis() - lastSaveTime > 60000)) {
+        if (loadCell.isStableWeight() && isStorageReady && (millis() - lastSaveTime > 60000)) {
             lastSaveTime = millis(); 
             uint32_t timestamp = isTimeSynched ? (uint32_t)time(nullptr) : (uint32_t)(millis() / 1000);
             Serial.print("Poids mesuré : ");
