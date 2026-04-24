@@ -3,7 +3,7 @@
 #include <sys/time.h>
 
 #define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
-#define WEIGHT_CHAR_UUID    "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+#define COMM_CHAR_UUID    "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 #define TIME_CHAR_UUID      "e3223119-9445-4e96-a402-55369581a030"
 
 ConnectionManager::ConnectionManager(const char* deviceName) : _deviceName(deviceName) {}
@@ -32,7 +32,7 @@ void ConnectionManager::TimeCallbacks::onWrite(BLECharacteristic* pChar) {
 
         if (value == "GET_BATTERY" || value == "BATTERY?") {
             if (_manager->_loadCell) {
-                _manager->sendHistoryChunk("BATTERY:" + String(_manager->_batteryManager->getBatteryLevel()));
+                _manager->sendInformation("BATTERY:" + String(_manager->_batteryManager->getBatteryLevel()));
                 Serial.println("Commande reçue : envoi du niveau de batterie.");
             }
             return;
@@ -126,7 +126,7 @@ void ConnectionManager::begin(Storage* storage, volatile bool* isSynched, LoadCe
     BLEService *pService = _pServer->createService(SERVICE_UUID);
 
     _pWeightChar = pService->createCharacteristic(
-        WEIGHT_CHAR_UUID,
+        COMM_CHAR_UUID,
         BLECharacteristic::PROPERTY_READ | 
         BLECharacteristic::PROPERTY_NOTIFY
     );
@@ -171,7 +171,7 @@ bool ConnectionManager::isConnected() {
     return _deviceConnected;
 }
 
-void ConnectionManager::sendHistoryChunk(String chunk) {
+void ConnectionManager::sendInformation(String chunk) {
     if (_deviceConnected) {
         _pWeightChar->setValue(chunk.c_str());
         _pWeightChar->notify();

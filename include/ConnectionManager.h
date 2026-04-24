@@ -19,7 +19,7 @@ public:
     
     bool isConnected();
 
-    void sendHistoryChunk(String chunk);
+    void sendInformation(String chunk);
     void sendScaleFactor();
 
     volatile bool shouldClearStorage = false; // Flag to indicate when the storage should be cleared after successful sync

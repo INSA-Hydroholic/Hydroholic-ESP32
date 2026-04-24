@@ -16,7 +16,7 @@ BatteryManager batteryManager(BATTERY_ADC_PIN);
 
 volatile bool isTimeSynched = false;
 volatile bool isSyncing = false;
-volatile bool isWaitingForConfirm = false; 
+volatile bool isWaitingForConfirm = false;
 volatile bool isStorageReady = false;
 volatile float globalWeight = 0.0;
 
@@ -155,7 +155,7 @@ void loop() {
             while (f.available()) {
                 String line = f.readStringUntil('\n');
                 if (line.length() > 0) {
-                    connection.sendHistoryChunk("HIST:" + line + "\n");
+                    connection.sendInformation("HIST:" + line + "\n");
                     delay(50); 
                 }
             }
