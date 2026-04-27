@@ -1,6 +1,21 @@
 #include "LoadCell.h"
 
+void TaskLoadCell(void * pvParameters) {
+    LoadCell* loadCell = static_cast<LoadCell*>(pvParameters);
+    unsigned long lastSaveTime = 0;
+    for(;;) {
+        loadCell->measureWeight();
+        Serial.print("Measured weight: ");
+        Serial.print(loadCell->getWeight());
+        Serial.print(" g, Stable: ");
+        Serial.println(loadCell->isStableWeight() ? "Yes" : "No");
+        
+        vTaskDelay(500 / portTICK_PERIOD_MS);  // Run every 500 ms
+    }
+}
+
 void LoadCell::resetStabilityState() {
+    // This method is called from mutex protected sections, no need to take mutex here
     historyIndex = 0;
     historyCount = 0;
     isStable = false;
@@ -13,33 +28,30 @@ void LoadCell::begin() {
     pinMode(_enablePin, OUTPUT);
     turnOn(); // Ensure the HX711 is powered on before initialization
 
-    if (_scaleMutex == nullptr) {
-        _scaleMutex = xSemaphoreCreateMutex();
-    }
+    _scaleMutex = xSemaphoreCreateMutex();
 
     scale.begin(_doutPin, _sckPin);
     scale.set_scale(calibration_factor);
+    delay(200);     // Let the ADC settle before taring
     scale.tare(20); // Tare with more samples for better stability
     emaValue = 0;
     emaInitialized = false;
     resetStabilityState();
-    Serial.println("HX711 : Initialisé avec succès");
+    Serial.println("HX711 : board initialized and tared.");
 }
 
 void LoadCell::tare() {
-    if (_scaleMutex) {
-        xSemaphoreTake(_scaleMutex, portMAX_DELAY);
-    }
+    if (xSemaphoreTake(_scaleMutex, portMAX_DELAY) == pdTRUE) {
+        turnOn();
+        delay(200); // Let the ADC settle before taring
+        scale.tare(20);
+        emaValue = 0;
+        emaInitialized = false;
+        resetStabilityState();
 
-    turnOn();
-    delay(200); // Let the ADC settle before taring
-    scale.tare(20);
-    emaValue = 0;
-    emaInitialized = false;
-    resetStabilityState();
-
-    if (_scaleMutex) {
         xSemaphoreGive(_scaleMutex);
+    } else {
+        Serial.println("Error : Failed to take scale mutex for tare");
     }
 }
 
@@ -48,88 +60,87 @@ bool LoadCell::setCalibrationFactor(float factor) {
         return false;
     }
 
-    if (_scaleMutex) {
-        xSemaphoreTake(_scaleMutex, portMAX_DELAY);
-    }
+    if (xSemaphoreTake(_scaleMutex, portMAX_DELAY) == pdTRUE) {
+        calibration_factor = factor;
+        scale.set_scale(calibration_factor);
+        emaValue = 0;
+        emaInitialized = false;
+        resetStabilityState();
 
-    calibration_factor = factor;
-    scale.set_scale(calibration_factor);
-    emaValue = 0;
-    emaInitialized = false;
-    resetStabilityState();
-
-    if (_scaleMutex) {
         xSemaphoreGive(_scaleMutex);
-    }
 
-    return true;
+        return true;
+    } else {
+        Serial.println("Error : Failed to take scale mutex for setCalibrationFactor");
+        return false;
+    }
 }
 
 float LoadCell::getCalibrationFactor() {
     float factor = calibration_factor;
 
-    if (_scaleMutex) {
-        xSemaphoreTake(_scaleMutex, portMAX_DELAY);
+    if (xSemaphoreTake(_scaleMutex, portMAX_DELAY) == pdTRUE) {
         factor = calibration_factor;
         xSemaphoreGive(_scaleMutex);
+    } else {
+        Serial.println("Error : Failed to take scale mutex for getCalibrationFactor");
     }
 
     return factor;
 }
 
 void LoadCell::measureWeight() {  // This method should be called every second or so
-    if (_scaleMutex) {
-        xSemaphoreTake(_scaleMutex, portMAX_DELAY);
-    }
+    if (xSemaphoreTake(_scaleMutex, portMAX_DELAY) == pdTRUE) {
+        // Read a reduced number of samples to avoid long blocking periods
+        for (int i = 0; i < NUM_SAMPLES; i++) {
+            samples[i] = scale.get_units(3); // Smaller per-read averaging for responsiveness
+        }
 
-    // Read a reduced number of samples to avoid long blocking periods
-    for (int i = 0; i < NUM_SAMPLES; i++) {
-        samples[i] = scale.get_units(3); // Smaller per-read averaging for responsiveness
-    }
+        // Sort the samples to find the median
+        std::sort(samples, samples + NUM_SAMPLES);
+        float median = samples[NUM_SAMPLES / 2]; // Middle value after sorting (median)
 
-    // Sort the samples to find the median
-    std::sort(samples, samples + NUM_SAMPLES);
-    float median = samples[NUM_SAMPLES / 2]; // Middle value after sorting (median)
+        // Update EMA and history under the same lock used by tare/calibration updates.
+        if (!emaInitialized) {
+            emaValue = median; // Initialize EMA with the first median value
+            emaInitialized = true;
+        } else {
+            emaValue = (EMA_ALPHA * median) + ((1 - EMA_ALPHA) * emaValue);
+        }
 
-    // Update EMA and history under the same lock used by tare/calibration updates.
-    if (!emaInitialized) {
-        emaValue = median; // Initialize EMA with the first median value
-        emaInitialized = true;
-    } else {
-        emaValue = (EMA_ALPHA * median) + ((1 - EMA_ALPHA) * emaValue);
-    }
+        history[historyIndex] = emaValue;
+        historyIndex = (historyIndex + 1) % STABILITY_SAMPLES; // Circular buffer
+        if (historyCount < STABILITY_SAMPLES) {
+            historyCount++;
+        }
 
-    history[historyIndex] = emaValue;
-    historyIndex = (historyIndex + 1) % STABILITY_SAMPLES; // Circular buffer
-    if (historyCount < STABILITY_SAMPLES) {
-        historyCount++;
-    }
-
-    // Do not report stable until we filled the full analysis window.
-    if (historyCount < STABILITY_SAMPLES) {
-        isStable = false;
-    } else {
-        isStable = true;
-        for (int i = 0; i < STABILITY_SAMPLES; i++) {
-            if (fabs(history[i] - emaValue) > STABILITY_THRESHOLD) {
-                isStable = false;
-                break;
+        // Do not report stable until we filled the full analysis window.
+        if (historyCount < STABILITY_SAMPLES) {
+            isStable = false;
+        } else {
+            isStable = true;
+            for (int i = 0; i < STABILITY_SAMPLES; i++) {
+                if (fabs(history[i] - emaValue) > STABILITY_THRESHOLD) {
+                    isStable = false;
+                    break;
+                }
             }
         }
-    }
 
-    if (_scaleMutex) {
         xSemaphoreGive(_scaleMutex);
+    } else {
+        Serial.println("Error : Failed to take scale mutex for measureWeight");
     }
 }
 
 float LoadCell::getWeight() const {
     float weight = emaValue;
 
-    if (_scaleMutex) {
-        xSemaphoreTake(_scaleMutex, portMAX_DELAY);
+    if (xSemaphoreTake(_scaleMutex, portMAX_DELAY) == pdTRUE) {
         weight = emaValue;
         xSemaphoreGive(_scaleMutex);
+    } else {
+        Serial.println("Error : Failed to take scale mutex for getWeight");
     }
 
     return weight;
@@ -138,10 +149,11 @@ float LoadCell::getWeight() const {
 bool LoadCell::isStableWeight() const {
     bool stable = isStable;
 
-    if (_scaleMutex) {
-        xSemaphoreTake(_scaleMutex, portMAX_DELAY);
+    if (xSemaphoreTake(_scaleMutex, portMAX_DELAY) == pdTRUE) {
         stable = isStable;
         xSemaphoreGive(_scaleMutex);
+    } else {
+        Serial.println("Error : Failed to take scale mutex for isStableWeight");
     }
 
     return stable;
