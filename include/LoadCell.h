@@ -10,6 +10,8 @@
 #define STABILITY_SAMPLES 10
 #define STABILITY_THRESHOLD 1.0 // Threshold for considering the weight stable (in grams)
 
+void TaskLoadCell(void * pvParameters);  // Expects a pointer to a LoadCell instance as parameter
+
 class LoadCell {
   private:
     HX711 scale;
@@ -25,7 +27,7 @@ class LoadCell {
     float emaValue;                 // Variable to store the current EMA (exponential moving average) value
     bool emaInitialized;
     const float EMA_ALPHA = 0.5;    // Smoothing factor for EMA (0 < EMA_ALPHA <= 1, smaller is smoother but less responsive)
-    SemaphoreHandle_t _scaleMutex;
+    SemaphoreHandle_t _scaleMutex = nullptr;  // Mutex to protect access to EMA and stability state during tare/calibration updates
 
     void resetStabilityState();
 

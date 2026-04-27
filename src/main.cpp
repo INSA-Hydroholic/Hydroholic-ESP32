@@ -10,7 +10,7 @@
 #define BATTERY_ADC_PIN 34
 
 ConnectionManager connection("Hydroholic");
-Storage storage("/data.csv");
+Storage dataStorage("/data.csv");
 LoadCell loadCell(HX711_DOUT_PIN, HX711_SCK_PIN, HX711_ENABLE_PIN, 2280.0);
 BatteryManager batteryManager(BATTERY_ADC_PIN);
 
@@ -20,46 +20,10 @@ volatile bool isWaitingForConfirm = false;
 volatile bool isStorageReady = false;
 volatile float globalWeight = 0.0;
 
-void TaskCapteur(void * pvParameters) {
-    unsigned long lastSaveTime = 0;
-    for(;;) {
-        loadCell.measureWeight();
-        globalWeight = loadCell.getWeight();
-        Serial.print("Poids actuel : ");
-        Serial.println(globalWeight);
-        
-        if (loadCell.isStableWeight() && isStorageReady && (millis() - lastSaveTime > 60000)) {
-            lastSaveTime = millis(); 
-            uint32_t timestamp = isTimeSynched ? (uint32_t)time(nullptr) : (uint32_t)(millis() / 1000);
-            Serial.print("Poids mesuré : ");
-            Serial.print(globalWeight);
-            Serial.print(" - Heure : ");
-            Serial.println(timestamp);
-
-            if (!storage.append(timestamp, globalWeight, isTimeSynched)) {
-                Serial.println("Archive reportée (FS occupé)");
-            } else {
-                Serial.println("Donnée archivée.");
-            }
-        }
-        vTaskDelay(500 / portTICK_PERIOD_MS);  // Run every 500 ms
-    }
-}
-
-void TaskBattery(void * pvParameters) {
-    for(;;) {
-        batteryManager.readBatteryLevel();
-        float level = batteryManager.getBatteryLevel();
-        Serial.print("Niveau de batterie : ");
-        Serial.println(level);
-        vTaskDelay(500 / portTICK_PERIOD_MS);  // Run every 500 ms
-    }
-}
-
 void setup() {
     Serial.begin(115200);
-    // On force le formatage si besoin avec true
-    if (storage.begin()) {
+
+    if (dataStorage.begin()) {
         isStorageReady = true;
     } else {
         Serial.println("ERREUR : LittleFS HS");
@@ -113,10 +77,10 @@ void setup() {
         Serial.println("Could not open config.csv for reading.");
     }
 
-    connection.begin(&storage, &isTimeSynched, &loadCell, &batteryManager);
+    connection.begin(&dataStorage, &isTimeSynched, &loadCell, &batteryManager);
     // Run the sensor task on core 1 so it can't starve the core-0 Idle/Watchdog
-    xTaskCreatePinnedToCore(TaskCapteur, "TaskCapteur", 10000, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(TaskBattery, "TaskBattery", 10000, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(TaskLoadCell, "TaskLoadCell", 10000, &loadCell, 1, NULL, 1);
+    xTaskCreatePinnedToCore(TaskBatteryManager, "TaskBatteryManager", 10000, &batteryManager, 1, NULL, 1);
 }
 
 void loop() {
@@ -138,7 +102,7 @@ void loop() {
 
     // STATE 3 : Préparation (On n'entre ici que si on n'est pas déjà en train de synchro)
     if (isTimeSynched && !isSyncing && !isWaitingForConfirm) {
-        if (storage.prepareDataForSync()) {
+        if (dataStorage.prepareDataForSync()) {
             isSyncing = true;
             Serial.println("Début de l'envoi...");
         } else {
@@ -174,7 +138,7 @@ void loop() {
     if (connection.shouldClearStorage) {
         connection.shouldClearStorage = false; 
         if (LittleFS.exists("/sync.csv")) {
-            storage.clearSyncFile();
+            dataStorage.clearSyncFile();
             Serial.println("Fichier de synchro supprimé !");
         }
         isWaitingForConfirm = false; 

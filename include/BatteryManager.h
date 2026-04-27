@@ -5,13 +5,15 @@
 
 #define BATTERY_NUMBER_OF_SAMPLES 5
 
+void TaskBatteryManager(void * pvParameters);
+
 class BatteryManager {
     private:
         int adcPin;
         float samples[BATTERY_NUMBER_OF_SAMPLES];
         float rawAdc;
         float batteryVoltage;
-        float emaBatteryLevel = 0.0;
+        float emaBatteryLevel = 0.0; // 0-100% battery level, smoothed with EMA
         const float EMA_ALPHA = 0.2; // Smoothing factor for EMA (0 < EMA_ALPHA <= 1, smaller is smoother but less responsive)
 
     public:
