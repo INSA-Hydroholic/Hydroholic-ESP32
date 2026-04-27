@@ -22,7 +22,7 @@ volatile float globalWeight = 0.0;
 
 void setup() {
     Serial.begin(115200);
-    // On force le formatage si besoin avec true
+
     if (dataStorage.begin()) {
         isStorageReady = true;
     } else {
