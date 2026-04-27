@@ -1,5 +1,15 @@
 #include "BatteryManager.h"
 
+void TaskBatteryManager(void * pvParameters) {
+    BatteryManager* batteryManager = static_cast<BatteryManager*>(pvParameters);
+    for(;;) {
+        batteryManager->readBatteryLevel();
+        Serial.print("Battery level : ");
+        Serial.println(batteryManager->getBatteryLevel());
+        vTaskDelay(500 / portTICK_PERIOD_MS);  // Run every 500 ms
+    }
+}
+
 BatteryManager::BatteryManager(int adcPin) : adcPin(adcPin) {}
 
 void BatteryManager::begin() {
@@ -34,5 +44,5 @@ void BatteryManager::readBatteryLevel() {
 }
 
 float BatteryManager::getBatteryLevel() const {
-    return rawAdc;
+    return emaBatteryLevel;
 }

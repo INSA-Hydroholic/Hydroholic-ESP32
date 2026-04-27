@@ -20,17 +20,6 @@ volatile bool isWaitingForConfirm = false;
 volatile bool isStorageReady = false;
 volatile float globalWeight = 0.0;
 
-
-void TaskBatteryManager(void * pvParameters) {
-    for(;;) {
-        batteryManager.readBatteryLevel();
-        float level = batteryManager.getBatteryLevel();
-        Serial.print("Niveau de batterie : ");
-        Serial.println(level);
-        vTaskDelay(500 / portTICK_PERIOD_MS);  // Run every 500 ms
-    }
-}
-
 void setup() {
     Serial.begin(115200);
     // On force le formatage si besoin avec true
@@ -91,7 +80,7 @@ void setup() {
     connection.begin(&dataStorage, &isTimeSynched, &loadCell, &batteryManager);
     // Run the sensor task on core 1 so it can't starve the core-0 Idle/Watchdog
     xTaskCreatePinnedToCore(TaskLoadCell, "TaskLoadCell", 10000, &loadCell, 1, NULL, 1);
-    xTaskCreatePinnedToCore(TaskBatteryManager, "TaskBatteryManager", 10000, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(TaskBatteryManager, "TaskBatteryManager", 10000, &batteryManager, 1, NULL, 1);
 }
 
 void loop() {
