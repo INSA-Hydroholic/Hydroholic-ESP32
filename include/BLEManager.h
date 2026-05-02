@@ -9,13 +9,15 @@
 #include "BatteryManager.h"
 class LoadCell;
 
-class ConnectionManager {
+void TaskBLEManager(void * pvParameters);  // Expects a pointer to a BLEManager instance as parameter
+
+class BLEManager {
 public:
-    ConnectionManager(const char* deviceName = "Hydroholic");
+    BLEManager(const char* deviceName = "Hydroholic");
 
     void begin(Storage* storage, volatile bool* isSynched, LoadCell* loadCell, BatteryManager* batteryManager); // setup
 
-    void updateWeight(float weight);
+    void updateWeight();
     
     bool isConnected();
 
@@ -37,9 +39,9 @@ private:
 
     // Callbacks to detect connection/disconnection
     class ServerCallbacks : public BLEServerCallbacks {
-        ConnectionManager* _manager;
+        BLEManager* _manager;
         public:
-            ServerCallbacks(ConnectionManager* m) : _manager(m) {}
+            ServerCallbacks(BLEManager* m) : _manager(m) {}
             void onConnect(BLEServer* pServer) override { _manager->_deviceConnected = true; }
             void onDisconnect(BLEServer* pServer) override { 
                 _manager->_deviceConnected = false;
@@ -49,9 +51,9 @@ private:
     };
 
     class TimeCallbacks : public BLECharacteristicCallbacks {
-        ConnectionManager* _manager;
+        BLEManager* _manager;
         public:
-            TimeCallbacks(ConnectionManager* m) : _manager(m) {}
+            TimeCallbacks(BLEManager* m) : _manager(m) {}
             void onWrite(BLECharacteristic* pChar) override;
     };
 };

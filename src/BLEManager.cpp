@@ -1,19 +1,88 @@
-#include "ConnectionManager.h"
+#include "BLEManager.h"
 #include "LoadCell.h"
 #include <sys/time.h>
 
 #define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
-#define COMM_CHAR_UUID    "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+#define COMM_CHAR_UUID      "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 #define TIME_CHAR_UUID      "e3223119-9445-4e96-a402-55369581a030"
 
-ConnectionManager::ConnectionManager(const char* deviceName) : _deviceName(deviceName) {}
+void TaskBLEManager(void * pvParameters) {
+    BLEManager* manager = static_cast<BLEManager*>(pvParameters);
+    for (;;) {
+        if (!manager->isConnected()) {
+            isSyncing = false;
+            isWaitingForConfirm = false;
+            // Blink builtin LED to indicate waiting for manager
+            digitalWrite(2, millis() / 500 % 2);
+            delay(100);
+            return;
+        }
+        digitalWrite(2, LOW); // Turn off LED when connected
+
+        // STATE 2 : Attente de l'heure
+        if (!isTimeSynched) {
+            delay(1000);
+            return;
+        }
+
+        // STATE 3 : Préparation (On n'entre ici que si on n'est pas déjà en train de synchro)
+        if (isTimeSynched && !isSyncing && !isWaitingForConfirm) {
+            if (dataStorage.prepareDataForSync()) {
+                isSyncing = true;
+                Serial.println("Début de l'envoi...");
+            } else {
+                // Pas de données à envoyer, on passe directement en mode "prêt"
+                isWaitingForConfirm = true; 
+            }
+        }
+
+        // STATE 4 : Envoi streaming
+        if (isSyncing) {
+            File f = LittleFS.open("/sync.csv", "r"); 
+            if (f) {
+                Serial.println("Envoi sécurisé de l'historique...");
+                while (f.available()) {
+                    String line = f.readStringUntil('\n');
+                    if (line.length() > 0) {
+                        manager->sendInformation("HIST:" + line + "\n");
+                        delay(50); 
+                    }
+                }
+                f.close();
+                isSyncing = false;
+                isWaitingForConfirm = true; 
+                Serial.println("Envoi fini. Attente du OK client...");
+            } else {
+                // SI LE FICHIER N'EXISTE PAS OU NE PEUT PAS S'OUVRIR
+                Serial.println("Erreur : Impossible d'ouvrir sync.csv, abandon de la synchro.");
+                isSyncing = false; 
+            }
+        }
+
+        // STATE 5 : Réception du OK (Vider le stockage)
+        if (manager->shouldClearStorage) {
+            manager->shouldClearStorage = false; 
+            if (LittleFS.exists("/sync.csv")) {
+                dataStorage.clearSyncFile();
+                Serial.println("Fichier de synchro supprimé !");
+            }
+            isWaitingForConfirm = false; 
+        }
+
+        // Poids en temps réel
+        manager->updateWeight();
+        vTaskDelay(1000 / portTICK_PERIOD_MS);  // Run every 1 second
+    }
+}
+
+BLEManager::BLEManager(const char* deviceName) : _deviceName(deviceName) {}
 
 /**
  * @brief Callback function for handling write requests to the time characteristic
  * 
  * @param pChar Pointer to the BLE characteristic that received the write request. The value is expected to be a string representing the epoch time or "OK" for confirmation.
  */
-void ConnectionManager::TimeCallbacks::onWrite(BLECharacteristic* pChar) {
+void BLEManager::TimeCallbacks::onWrite(BLECharacteristic* pChar) {
     std::string value = pChar->getValue();
     if (value.length() > 0) {
 
@@ -112,7 +181,7 @@ void ConnectionManager::TimeCallbacks::onWrite(BLECharacteristic* pChar) {
     }
 }
 
-void ConnectionManager::begin(Storage* storage, volatile bool* isSynched, LoadCell* loadCell, BatteryManager* batteryManager) {
+void BLEManager::begin(Storage* storage, volatile bool* isSynched, LoadCell* loadCell, BatteryManager* batteryManager) {
     this->_storage = storage;
     this->_loadCell = loadCell;
     this->_isSynched = isSynched;
@@ -155,10 +224,18 @@ void ConnectionManager::begin(Storage* storage, volatile bool* isSynched, LoadCe
     pAdvertising->setMinPreferred(0x12);
     BLEDevice::startAdvertising();
     
-    Serial.println("ConnectionManager ready and advertising");
+    Serial.println("BLEManager ready and advertising");
 }
 
-void ConnectionManager::updateWeight(float weight) {
+void BLEManager::updateWeight() {
+    float weight = -1.f;
+    if (_loadCell) {
+        weight = _loadCell->getWeight();
+    } else {
+        Serial.println("Warning: LoadCell instance not available in BLEManager, cannot update weight.");
+        return;
+    }
+
     if (_deviceConnected) {
         char buffer[10];
         dtostrf(weight, 4, 2, buffer); // Conversion float -> text
@@ -167,11 +244,11 @@ void ConnectionManager::updateWeight(float weight) {
     }
 }
 
-bool ConnectionManager::isConnected() {
+bool BLEManager::isConnected() {
     return _deviceConnected;
 }
 
-void ConnectionManager::sendInformation(String chunk) {
+void BLEManager::sendInformation(String chunk) {
     if (_deviceConnected) {
         _pWeightChar->setValue(chunk.c_str());
         _pWeightChar->notify();
@@ -181,7 +258,7 @@ void ConnectionManager::sendInformation(String chunk) {
     }
 }
 
-void ConnectionManager::sendScaleFactor() {
+void BLEManager::sendScaleFactor() {
     if (!_deviceConnected || !_loadCell) {
         return;
     }
