@@ -32,7 +32,7 @@ class LoadCell {
     void resetStabilityState();
 
   public:
-    LoadCell(int doutPin, int sckPin, int enablePin, float calibFactor) 
+    LoadCell(int doutPin, int sckPin, float calibFactor, int enablePin = -1) 
         : _doutPin(doutPin), _sckPin(sckPin), _enablePin(enablePin), calibration_factor(calibFactor), emaValue(0), emaInitialized(false), _scaleMutex(nullptr) {}
 
     void begin();       // Initializes the HX711 and sets the calibration factor

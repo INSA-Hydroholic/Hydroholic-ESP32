@@ -160,9 +160,13 @@ bool LoadCell::isStableWeight() const {
 }
 
 void LoadCell::turnOn() {
-    digitalWrite(_enablePin, HIGH); // Enable the HX711
+    if (_enablePin >= 0) {
+        digitalWrite(_enablePin, HIGH); // Enable the HX711
+    }
 }
 
 void LoadCell::turnOff() {
-    digitalWrite(_enablePin, LOW); // Disable the HX711 to save power
+    if (_enablePin >= 0) {
+        digitalWrite(_enablePin, LOW); // Disable the HX711 to save power
+    }
 }

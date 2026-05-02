@@ -13,11 +13,10 @@ void TaskBatteryManager(void * pvParameters) {
 BatteryManager::BatteryManager(int adcPin) : adcPin(adcPin) {}
 
 void BatteryManager::begin() {
+    // Configure ADC attenuation
+    analogSetAttenuation(ADC_11db); // Set attenuation for 0-3.3V range
     // Configure the ADC pin for battery level reading
     pinMode(adcPin, INPUT);
-    // Configure ADC resolution and attenuation
-    analogReadResolution(12); // 12-bit resolution (0-4095)
-    analogSetAttenuation(ADC_11db); // 0~3.3V range
 }
 
 void BatteryManager::readBatteryLevel() {
@@ -28,8 +27,8 @@ void BatteryManager::readBatteryLevel() {
     
     std::sort(samples, samples + BATTERY_NUMBER_OF_SAMPLES);
     rawAdc = samples[BATTERY_NUMBER_OF_SAMPLES / 2]; // Use the median value to reduce noise
-    float vNode = (rawAdc / 4095.0f) * 1.1f * 20.0f; // Convert ADC value to voltage
-    batteryVoltage = vNode * 4.214f;
+    float vNode = rawAdc * (3.3f / 4095.0f); // Convert ADC reading to voltage (assuming 3.3V reference and 12-bit resolution)
+    batteryVoltage = vNode * 1.37f;
 
     // Assuming a linear discharge curve from 4.2V (100%) to 2.9V (0%), we calculate the battery level percentage. In practice, the curve is not perfectly linear, but this gives a reasonable estimate.
     float currBatteryLevel = ((batteryVoltage - 2.9f) / (4.2f - 2.9f)) * 100.0f;

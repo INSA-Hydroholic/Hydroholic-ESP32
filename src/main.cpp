@@ -4,14 +4,16 @@
 #include "BatteryManager.h"
 #include "Storage.h"
 
-#define HX711_DOUT_PIN 14
-#define HX711_SCK_PIN 27
-#define HX711_ENABLE_PIN 26
-#define BATTERY_ADC_PIN 34
+#define HX711_DOUT_PIN      17
+#define HX711_SCK_PIN       16
+#define LED_PIN             19
+#define BATTERY_ADC_PIN     34
+#define BUZZER_PIN          23
+#define RST_BUTTON_PIN      18
 
 ConnectionManager connection("Hydroholic");
 Storage dataStorage("/data.csv");
-LoadCell loadCell(HX711_DOUT_PIN, HX711_SCK_PIN, HX711_ENABLE_PIN, 2280.0);
+LoadCell loadCell(HX711_DOUT_PIN, HX711_SCK_PIN, 2280.0);
 BatteryManager batteryManager(BATTERY_ADC_PIN);
 
 volatile bool isTimeSynched = false;
