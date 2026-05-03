@@ -1,6 +1,6 @@
 #include <Arduino.h>
 #include "LoadCell.h"
-#include "ConnectionManager.h"
+#include "BLEManager.h"
 #include "BatteryManager.h"
 #include "Storage.h"
 
@@ -11,16 +11,12 @@
 #define BUZZER_PIN          23
 #define RST_BUTTON_PIN      18
 
-ConnectionManager connection("Hydroholic");
+BLEManager connection("Hydroholic");
 Storage dataStorage("/data.csv");
 LoadCell loadCell(HX711_DOUT_PIN, HX711_SCK_PIN, 2280.0);
 BatteryManager batteryManager(BATTERY_ADC_PIN);
 
-volatile bool isTimeSynched = false;
-volatile bool isSyncing = false;
-volatile bool isWaitingForConfirm = false;
 volatile bool isStorageReady = false;
-volatile float globalWeight = 0.0;
 
 void setup() {
     Serial.begin(115200);
@@ -79,74 +75,18 @@ void setup() {
         Serial.println("Could not open config.csv for reading.");
     }
 
-    connection.begin(&dataStorage, &isTimeSynched, &loadCell, &batteryManager);
+    connection.begin(&dataStorage, &loadCell, &batteryManager);
     // Run the sensor task on core 1 so it can't starve the core-0 Idle/Watchdog
     xTaskCreatePinnedToCore(TaskLoadCell, "TaskLoadCell", 10000, &loadCell, 1, NULL, 1);
     xTaskCreatePinnedToCore(TaskBatteryManager, "TaskBatteryManager", 10000, &batteryManager, 1, NULL, 1);
+
+    // TODO : check the mode of operation (wifi vs BLE) and start the appropriate task for the main loop (for now we just start the BLE task)
+    ble_task_parameters_t* bleParams = new ble_task_parameters_t{&connection, &dataStorage};
+    xTaskCreatePinnedToCore(TaskBLEManager, "TaskBLEManager", 10000, bleParams, 1, NULL, 0);
 }
 
+// Main loop will handle the state machine of the device, orchestrating the setup, mode of operation and other periodic tasks if needed
 void loop() {
-    if (!connection.isConnected()) {
-        isSyncing = false;
-        isWaitingForConfirm = false;
-        // Blink builtin LED to indicate waiting for connection
-        digitalWrite(2, millis() / 500 % 2);
-        delay(100);
-        return;
-    }
-    digitalWrite(2, LOW); // Turn off LED when connected
-
-    // STATE 2 : Attente de l'heure
-    if (!isTimeSynched) {
-        delay(1000);
-        return;
-    }
-
-    // STATE 3 : Préparation (On n'entre ici que si on n'est pas déjà en train de synchro)
-    if (isTimeSynched && !isSyncing && !isWaitingForConfirm) {
-        if (dataStorage.prepareDataForSync()) {
-            isSyncing = true;
-            Serial.println("Début de l'envoi...");
-        } else {
-            // Pas de données à envoyer, on passe directement en mode "prêt"
-            isWaitingForConfirm = true; 
-        }
-    }
-
-    // STATE 4 : Envoi streaming
-    if (isSyncing) {
-        File f = LittleFS.open("/sync.csv", "r"); 
-        if (f) {
-            Serial.println("Envoi sécurisé de l'historique...");
-            while (f.available()) {
-                String line = f.readStringUntil('\n');
-                if (line.length() > 0) {
-                    connection.sendInformation("HIST:" + line + "\n");
-                    delay(50); 
-                }
-            }
-            f.close();
-            isSyncing = false;
-            isWaitingForConfirm = true; 
-            Serial.println("Envoi fini. Attente du OK client...");
-        } else {
-            // SI LE FICHIER N'EXISTE PAS OU NE PEUT PAS S'OUVRIR
-            Serial.println("Erreur : Impossible d'ouvrir sync.csv, abandon de la synchro.");
-            isSyncing = false; 
-        }
-    }
-
-    // STATE 5 : Réception du OK (Vider le stockage)
-    if (connection.shouldClearStorage) {
-        connection.shouldClearStorage = false; 
-        if (LittleFS.exists("/sync.csv")) {
-            dataStorage.clearSyncFile();
-            Serial.println("Fichier de synchro supprimé !");
-        }
-        isWaitingForConfirm = false; 
-    }
-
-    // Poids en temps réel
-   connection.updateWeight(globalWeight);
-    delay(1000);
+    Serial.println("Main loop heartbeat...");
+    delay(5000);
 }

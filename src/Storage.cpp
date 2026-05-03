@@ -1,5 +1,5 @@
 #include "Storage.h"
-#include "ConnectionManager.h"
+#include "BLEManager.h"
 
 Storage::Storage(const char* filename) : _filename(filename) {
     _mutex = xSemaphoreCreateMutex();

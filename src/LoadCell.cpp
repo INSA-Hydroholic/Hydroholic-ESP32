@@ -25,8 +25,10 @@ void LoadCell::resetStabilityState() {
 }
 
 void LoadCell::begin() {
-    pinMode(_enablePin, OUTPUT);
-    turnOn(); // Ensure the HX711 is powered on before initialization
+    if (_enablePin >= 0) {
+        pinMode(_enablePin, OUTPUT);
+        turnOn(); // Ensure the HX711 is powered on before initialization
+    }
 
     _scaleMutex = xSemaphoreCreateMutex();
 

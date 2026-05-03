@@ -9,15 +9,20 @@
 #include "BatteryManager.h"
 class LoadCell;
 
-class ConnectionManager {
+void TaskBLEManager(void * pvParameters);  // Expects a pointer to a BLEManager instance as parameter
+
+class BLEManager {
 public:
-    ConnectionManager(const char* deviceName = "Hydroholic");
+    BLEManager(const char* deviceName = "Hydroholic");
 
-    void begin(Storage* storage, volatile bool* isSynched, LoadCell* loadCell, BatteryManager* batteryManager); // setup
+    void begin(Storage* storage, LoadCell* loadCell, BatteryManager* batteryManager); // setup
 
-    void updateWeight(float weight);
+    void updateWeight();
     
     bool isConnected();
+
+    volatile bool* isTimeSynched();
+    void setTimeSynched(volatile bool* isTimeSynched);
 
     void sendInformation(String chunk);
     void sendScaleFactor();
@@ -32,26 +37,31 @@ private:
     Storage * _storage;
     LoadCell * _loadCell = nullptr;
     BatteryManager * _batteryManager = nullptr;
-    volatile bool* _isSynched;
+    volatile bool* _isTimeSynched;
     volatile bool _deviceConnected = false;
 
     // Callbacks to detect connection/disconnection
     class ServerCallbacks : public BLEServerCallbacks {
-        ConnectionManager* _manager;
+        BLEManager* _manager;
         public:
-            ServerCallbacks(ConnectionManager* m) : _manager(m) {}
+            ServerCallbacks(BLEManager* m) : _manager(m) {}
             void onConnect(BLEServer* pServer) override { _manager->_deviceConnected = true; }
             void onDisconnect(BLEServer* pServer) override { 
                 _manager->_deviceConnected = false;
-                *_manager->_isSynched = false;
+                *_manager->_isTimeSynched = false;
                 _manager->_pServer->getAdvertising()->start();
             }
     };
 
     class TimeCallbacks : public BLECharacteristicCallbacks {
-        ConnectionManager* _manager;
+        BLEManager* _manager;
         public:
-            TimeCallbacks(ConnectionManager* m) : _manager(m) {}
+            TimeCallbacks(BLEManager* m) : _manager(m) {}
             void onWrite(BLECharacteristic* pChar) override;
     };
+};
+
+struct ble_task_parameters_t {
+    BLEManager* manager;
+    Storage* storage;
 };
