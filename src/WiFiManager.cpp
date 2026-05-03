@@ -17,7 +17,7 @@ void TaskWiFiManager(void * pvParameters) {
 
 WiFiManager::WiFiManager() {}
 
-void WiFiManager::begin(const char* ssid, const char* password, opmode mode = NORMAL) {
+void WiFiManager::begin(const char* ssid, const char* password, opmode mode) {
     setMode(mode);
     if (mode == opmode::CONFIGURATION) {
         WiFi.mode(WIFI_AP);

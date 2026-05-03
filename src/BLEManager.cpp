@@ -10,6 +10,11 @@ void TaskBLEManager(void * pvParameters) {
     ble_task_parameters_t* params = static_cast<ble_task_parameters_t*>(pvParameters);
     BLEManager* manager = params->manager;
     Storage* dataStorage = params->storage;
+    LoadCell* loadCell = params->loadCell;
+    BatteryManager* batteryManager = params->batteryManager;
+
+    manager->begin(dataStorage, loadCell, batteryManager);
+
     // Free the parameters structure that has been allocated in main after extracting the pointers
     delete params;
 
