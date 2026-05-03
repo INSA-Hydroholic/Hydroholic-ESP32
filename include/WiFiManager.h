@@ -26,6 +26,8 @@ class WiFiManager {
         bool disconnectAndDisable();
         opmode getMode() const { return _mode; }
         void setMode(opmode mode) { _mode = mode; }
+        bool syncNTP();  // Synchronize time with NTP server
+        int retrieveConfigurationFromServer();  // Retrieve associated user ID
 
     private:
         opmode _mode;
