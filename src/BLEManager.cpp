@@ -7,7 +7,17 @@
 #define TIME_CHAR_UUID      "e3223119-9445-4e96-a402-55369581a030"
 
 void TaskBLEManager(void * pvParameters) {
-    BLEManager* manager = static_cast<BLEManager*>(pvParameters);
+    ble_task_parameters_t* params = static_cast<ble_task_parameters_t*>(pvParameters);
+    BLEManager* manager = params->manager;
+    Storage* dataStorage = params->storage;
+    // Free the parameters structure that has been allocated in main after extracting the pointers
+    delete params;
+
+    // Volatile variables are used to avoid compiler optimizations that could interfere with the state machine logic, since these variables can be modified by both the BLE callbacks and this task loop.
+    volatile bool isTimeSynched = false;
+    manager->setTimeSynched(&isTimeSynched);
+    volatile bool isSyncing = false;
+    volatile bool isWaitingForConfirm = false;
     for (;;) {
         if (!manager->isConnected()) {
             isSyncing = false;
@@ -15,19 +25,19 @@ void TaskBLEManager(void * pvParameters) {
             // Blink builtin LED to indicate waiting for manager
             digitalWrite(2, millis() / 500 % 2);
             delay(100);
-            return;
+            continue;
         }
         digitalWrite(2, LOW); // Turn off LED when connected
 
         // STATE 2 : Attente de l'heure
         if (!isTimeSynched) {
             delay(1000);
-            return;
+            continue;
         }
 
         // STATE 3 : Préparation (On n'entre ici que si on n'est pas déjà en train de synchro)
         if (isTimeSynched && !isSyncing && !isWaitingForConfirm) {
-            if (dataStorage.prepareDataForSync()) {
+            if (dataStorage->prepareDataForSync()) {
                 isSyncing = true;
                 Serial.println("Début de l'envoi...");
             } else {
@@ -63,7 +73,7 @@ void TaskBLEManager(void * pvParameters) {
         if (manager->shouldClearStorage) {
             manager->shouldClearStorage = false; 
             if (LittleFS.exists("/sync.csv")) {
-                dataStorage.clearSyncFile();
+                dataStorage->clearSyncFile();
                 Serial.println("Fichier de synchro supprimé !");
             }
             isWaitingForConfirm = false; 
@@ -172,7 +182,7 @@ void BLEManager::TimeCallbacks::onWrite(BLECharacteristic* pChar) {
         tv.tv_usec = 0;
         settimeofday(&tv, NULL);
 
-        *_manager->_isSynched = true;
+        *_manager->_isTimeSynched = true;
 
         _manager->_storage->migrateTempFiles(startTime);
 
@@ -181,10 +191,9 @@ void BLEManager::TimeCallbacks::onWrite(BLECharacteristic* pChar) {
     }
 }
 
-void BLEManager::begin(Storage* storage, volatile bool* isSynched, LoadCell* loadCell, BatteryManager* batteryManager) {
+void BLEManager::begin(Storage* storage, LoadCell* loadCell, BatteryManager* batteryManager) {
     this->_storage = storage;
     this->_loadCell = loadCell;
-    this->_isSynched = isSynched;
     this->_batteryManager = batteryManager;
 
     BLEDevice::init(_deviceName);
@@ -246,6 +255,14 @@ void BLEManager::updateWeight() {
 
 bool BLEManager::isConnected() {
     return _deviceConnected;
+}
+
+volatile bool* BLEManager::isTimeSynched() {
+    return _isTimeSynched;
+}
+
+void BLEManager::setTimeSynched(volatile bool* isTimeSynched) {
+    _isTimeSynched = isTimeSynched;
 }
 
 void BLEManager::sendInformation(String chunk) {

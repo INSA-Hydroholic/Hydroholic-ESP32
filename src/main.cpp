@@ -16,11 +16,7 @@ Storage dataStorage("/data.csv");
 LoadCell loadCell(HX711_DOUT_PIN, HX711_SCK_PIN, 2280.0);
 BatteryManager batteryManager(BATTERY_ADC_PIN);
 
-volatile bool isTimeSynched = false;
-volatile bool isSyncing = false;
-volatile bool isWaitingForConfirm = false;
 volatile bool isStorageReady = false;
-volatile float globalWeight = 0.0;
 
 void setup() {
     Serial.begin(115200);
@@ -79,16 +75,18 @@ void setup() {
         Serial.println("Could not open config.csv for reading.");
     }
 
-    connection.begin(&dataStorage, &isTimeSynched, &loadCell, &batteryManager);
+    connection.begin(&dataStorage, &loadCell, &batteryManager);
     // Run the sensor task on core 1 so it can't starve the core-0 Idle/Watchdog
     xTaskCreatePinnedToCore(TaskLoadCell, "TaskLoadCell", 10000, &loadCell, 1, NULL, 1);
     xTaskCreatePinnedToCore(TaskBatteryManager, "TaskBatteryManager", 10000, &batteryManager, 1, NULL, 1);
 
     // TODO : check the mode of operation (wifi vs BLE) and start the appropriate task for the main loop (for now we just start the BLE task)
-    xTaskCreatePinnedToCore(TaskBLEManager, "TaskBLEManager", 10000, &connection, 1, NULL, 0);
+    ble_task_parameters_t* bleParams = new ble_task_parameters_t{&connection, &dataStorage};
+    xTaskCreatePinnedToCore(TaskBLEManager, "TaskBLEManager", 10000, bleParams, 1, NULL, 0);
 }
 
 // Main loop will handle the state machine of the device, orchestrating the setup, mode of operation and other periodic tasks if needed
 void loop() {
-
+    Serial.println("Main loop heartbeat...");
+    delay(5000);
 }

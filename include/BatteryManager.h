@@ -14,11 +14,13 @@ class BatteryManager {
         float rawAdc;
         float batteryVoltage;
         float emaBatteryLevel = 0.0; // 0-100% battery level, smoothed with EMA
-        const float EMA_ALPHA = 0.2; // Smoothing factor for EMA (0 < EMA_ALPHA <= 1, smaller is smoother but less responsive)
+        const float EMA_ALPHA = 0.05; // Smoothing factor for EMA (0 < EMA_ALPHA <= 1, smaller is smoother but less responsive)
 
     public:
         BatteryManager(int adcPin);
         void begin();
         void readBatteryLevel();
         float getBatteryLevel() const;
+        float getBatteryVoltage() const;
+        float getRawAdc() const;
 };

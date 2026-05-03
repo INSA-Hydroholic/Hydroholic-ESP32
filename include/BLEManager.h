@@ -15,11 +15,14 @@ class BLEManager {
 public:
     BLEManager(const char* deviceName = "Hydroholic");
 
-    void begin(Storage* storage, volatile bool* isSynched, LoadCell* loadCell, BatteryManager* batteryManager); // setup
+    void begin(Storage* storage, LoadCell* loadCell, BatteryManager* batteryManager); // setup
 
     void updateWeight();
     
     bool isConnected();
+
+    volatile bool* isTimeSynched();
+    void setTimeSynched(volatile bool* isTimeSynched);
 
     void sendInformation(String chunk);
     void sendScaleFactor();
@@ -34,7 +37,7 @@ private:
     Storage * _storage;
     LoadCell * _loadCell = nullptr;
     BatteryManager * _batteryManager = nullptr;
-    volatile bool* _isSynched;
+    volatile bool* _isTimeSynched;
     volatile bool _deviceConnected = false;
 
     // Callbacks to detect connection/disconnection
@@ -45,7 +48,7 @@ private:
             void onConnect(BLEServer* pServer) override { _manager->_deviceConnected = true; }
             void onDisconnect(BLEServer* pServer) override { 
                 _manager->_deviceConnected = false;
-                *_manager->_isSynched = false;
+                *_manager->_isTimeSynched = false;
                 _manager->_pServer->getAdvertising()->start();
             }
     };
@@ -56,4 +59,9 @@ private:
             TimeCallbacks(BLEManager* m) : _manager(m) {}
             void onWrite(BLECharacteristic* pChar) override;
     };
+};
+
+struct ble_task_parameters_t {
+    BLEManager* manager;
+    Storage* storage;
 };
