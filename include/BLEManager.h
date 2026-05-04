@@ -6,6 +6,7 @@
 #include <BLE2902.h> // Notifications
 #include <time.h> // to synchronize time via BLE
 #include "Storage.h"
+#include "LoadCell.h"
 #include "BatteryManager.h"
 class LoadCell;
 
@@ -64,4 +65,6 @@ private:
 struct ble_task_parameters_t {
     BLEManager* manager;
     Storage* storage;
+    LoadCell* loadCell;
+    BatteryManager* batteryManager;
 };

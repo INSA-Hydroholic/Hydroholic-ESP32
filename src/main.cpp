@@ -1,8 +1,11 @@
 #include <Arduino.h>
 #include "LoadCell.h"
 #include "BLEManager.h"
+#include "WiFiManager.h"
 #include "BatteryManager.h"
 #include "Storage.h"
+
+#define OP_MODE "WIFI" // "WIFI" or "BLE", to select the mode of operation of the device
 
 #define HX711_DOUT_PIN      17
 #define HX711_SCK_PIN       16
@@ -75,14 +78,18 @@ void setup() {
         Serial.println("Could not open config.csv for reading.");
     }
 
-    connection.begin(&dataStorage, &loadCell, &batteryManager);
     // Run the sensor task on core 1 so it can't starve the core-0 Idle/Watchdog
     xTaskCreatePinnedToCore(TaskLoadCell, "TaskLoadCell", 10000, &loadCell, 1, NULL, 1);
     xTaskCreatePinnedToCore(TaskBatteryManager, "TaskBatteryManager", 10000, &batteryManager, 1, NULL, 1);
 
-    // TODO : check the mode of operation (wifi vs BLE) and start the appropriate task for the main loop (for now we just start the BLE task)
-    ble_task_parameters_t* bleParams = new ble_task_parameters_t{&connection, &dataStorage};
-    xTaskCreatePinnedToCore(TaskBLEManager, "TaskBLEManager", 10000, bleParams, 1, NULL, 0);
+    if (OP_MODE == "WIFI") {
+        WiFiManager wifiManager;
+        wifiManager.begin("Joule", "senha123", opmode::NORMAL);
+    } else if (OP_MODE == "BLE") {
+        // Create a structure to hold the parameters for the BLE task, since we can only pass a single void* parameter to the task function
+        ble_task_parameters_t* bleParams = new ble_task_parameters_t{&connection, &dataStorage, &loadCell, &batteryManager};
+        xTaskCreatePinnedToCore(TaskBLEManager, "TaskBLEManager", 10000, bleParams, 1, NULL, 0);
+    }
 }
 
 // Main loop will handle the state machine of the device, orchestrating the setup, mode of operation and other periodic tasks if needed
