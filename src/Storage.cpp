@@ -170,10 +170,10 @@ String Storage::readContent(const char* filename) {
     return data;
 }
 
-bool Storage::clear() {
+bool Storage::clear(const char* filename) {
+    bool result = false;
     if (xSemaphoreTake(_mutex, portMAX_DELAY)) {
-        bool result = false;
-        File f = LittleFS.open(_filename, "w");
+        File f = LittleFS.open(filename, "w");
         if (f) {
             f.close();
             result = true;
@@ -182,13 +182,15 @@ bool Storage::clear() {
             LittleFS.end();
             LittleFS.begin(false);
             vTaskDelay(10 / portTICK_PERIOD_MS);
-            f = LittleFS.open(_filename, "w");
-            if (f) { f.close(); result = true; }
+            f = LittleFS.open(filename, "w");
+            if (f) { 
+                f.close(); 
+                result = true;
+            }
         }
         xSemaphoreGive(_mutex);
-        return result;
     }
-    return false;
+    return result;
 }
 
 void Storage::migrateTempFiles(long startTime) {

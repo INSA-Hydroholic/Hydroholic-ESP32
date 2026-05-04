@@ -18,7 +18,7 @@ void TaskWiFiManager(void * pvParameters) {
     }
 }
 
-WiFiManager::WiFiManager(RTC_DS1307* realTimeClock) : rtc(realTimeClock) {}
+WiFiManager::WiFiManager(RTC_DS1307* realTimeClock, String deviceID) : rtc(realTimeClock), _deviceID(deviceID) {}
 
 void WiFiManager::begin(const char* ssid, const char* password, opmode mode) {
     setMode(mode);
@@ -37,6 +37,11 @@ void WiFiManager::begin(const char* ssid, const char* password, opmode mode) {
         _ssid = (char*)ssid;
         _password = (char*)password;
         Serial.println("\nWiFi connected with IP: " + WiFi.localIP().toString());
+        // Retrieve device ID if not set, for use in identification when sending data
+        if (_deviceID == "0") {
+            _deviceID = WiFi.macAddress();
+            // TODO : for now we'll be using the macAddress as device ID, but ideally it'd be server issued
+        }
     }
 }
 
@@ -44,7 +49,7 @@ bool WiFiManager::isConnected() const {
     return WiFi.status() == WL_CONNECTED;
 }
 
-int WiFiManager::sendData(const String& endpoint, const String& payload) {
+int WiFiManager::sendData(const String& endpoint, const String& payload, const String& contentType) {
     if(connect()) {
         Serial.println("WiFi connected, sending data...");
     } else {
@@ -54,7 +59,7 @@ int WiFiManager::sendData(const String& endpoint, const String& payload) {
 
     HTTPClient http;
     http.begin(String(apiURL) + endpoint);
-    http.addHeader("Content-Type", "application/json");
+    http.addHeader("Content-Type", contentType);
 
     int httpResponseCode = http.POST(payload);
     if (httpResponseCode > 0) {
@@ -132,4 +137,10 @@ bool WiFiManager::syncNTP() {
     // Update RTC time
     rtc->adjust(DateTime(now));
     return true;
+}
+
+void WiFiManager::setAPIURL(const char* url) {
+    apiURL = (char*)url;
+    Serial.println("API URL set to: " + String(apiURL));
+    // TODO : save the API URL in Storage config.csv file for persistence across reboots
 }

@@ -36,7 +36,7 @@ enum STATE {
     BLE
 };
 
-STATE currentState = SETUP;
+STATE currentState = WIFI; // Start in WiFi for debugging, MUST be changed to SETUP for production to allow initial configuration
 
 void setup() {
     Serial.begin(115200);
@@ -79,12 +79,13 @@ void setup() {
     loadCell.begin();
     batteryManager.begin();
 
-    // Search for existing calibration factor in config.csv
+    String deviceID = "0";
+    // Search for existing configuration in config.csv
     File configFile = LittleFS.open("/config.csv", "r");
     if (configFile) {
         String line = configFile.readStringUntil('\n');
         configFile.close();
-        if (line.startsWith("CALIB_FACTOR:")) {
+        if (line.startsWith("CALIB_FACTOR:")) {     // CALIBRATION FACTOR
             String factorStr = line.substring(line.indexOf(':') + 1);
             float factor = factorStr.toFloat();
             if (factor > 0) {
@@ -94,18 +95,23 @@ void setup() {
             } else {
                 Serial.println("Invalid calibration factor in config.csv, using default.");
             }
-        } else if (line.startsWith("DEV_ID:")) {
-            String devId = line.substring(line.indexOf(':') + 1);
+        } else if (line.startsWith("DEV_ID:")) {     // DEVICE ID
+            deviceID = line.substring(line.indexOf(':') + 1);
             Serial.print("Device ID loaded from config: ");
-            Serial.println(devId);
-            // TODO : We could store this device ID in a global variable or pass it to the WiFiManager for use in API calls
-        } else if (line.startsWith("OP_MODE:")) {
-            String opMode = line.substring(line.indexOf(':') + 1);
+            Serial.println(deviceID);
+        } else if (line.startsWith("STATE:")) {     // OPERATION MODE
+            String stateStr = line.substring(line.indexOf(':') + 1);
+            if (stateStr == "WIFI") {
+                currentState = WIFI;
+            } else if (stateStr == "BLE") {
+                currentState = BLE;
+            } else {
+                currentState = SETUP;
+            }
             Serial.print("Operation mode loaded from config: ");
-            Serial.println(opMode);
-            currentState = (opMode == "WIFI") ? WIFI : BLE; // Set initial state based on config
+            Serial.println(currentState);
         } else {
-            Serial.println("No calibration factor found in config.csv, using default.");
+            Serial.println("No valid configuration found in config.csv, using defaults.");
         }
     } else {
         Serial.println("Could not open config.csv for reading.");
@@ -116,13 +122,13 @@ void setup() {
     xTaskCreatePinnedToCore(TaskLoadCell, "TaskLoadCell", 10000, &loadCellParams, 1, NULL, 1);
     xTaskCreatePinnedToCore(TaskBatteryManager, "TaskBatteryManager", 10000, &batteryManager, 1, NULL, 1);
 
-    if (currentState == WIFI) {
-        wifiManager = new WiFiManager(&rtc);
-        wifiManager->begin("Joule", "senha123", opmode::NORMAL);
-    } else if (currentState == SETUP) {
-        wifiManager = new WiFiManager(&rtc);
-        wifiManager->begin("", "", opmode::CONFIGURATION);
-    } else if (currentState == BLE) {
+    if (currentState == STATE::WIFI) {
+        wifiManager = new WiFiManager(&rtc, deviceID);
+        wifiManager->begin(WIFI_SSID, WIFI_PASS, opmode::NORMAL);  // Defined in environment.ini
+    } else if (currentState == STATE::SETUP) {
+        wifiManager = new WiFiManager(&rtc, deviceID);
+        wifiManager->begin(NULL, NULL, opmode::CONFIGURATION);
+    } else if (currentState == STATE::BLE) {
         bleManager = new BLEManager("Hydroholic");
         // Create a structure to hold the parameters for the BLE task, since we can only pass a single void* parameter to the task function
         ble_task_parameters_t bleParams{bleManager, &dataStorage, &loadCell, &batteryManager};
@@ -132,11 +138,11 @@ void setup() {
 
 // Main loop will handle orchestration of services. It will handle weight updates, time synchronization, data storage, and others.
 void loop() {
-    if (currentState == BLE) {
+    if (currentState == STATE::BLE) {
         // The BLEManager task handles everything, so we just run an infinite loop
         delay(1000);
         return;
-    } else if (currentState == WIFI) {
+    } else if (currentState == STATE::WIFI) {
         unsigned long currentTime = millis();
         // Send data to the server every UPDATE_INTERVAL seconds
         if (currentTime - lastUpdateServerTime >= UPDATE_LOGS_INTERVAL) {
@@ -144,32 +150,26 @@ void loop() {
             
             // Get current RTC time for timestamp synchronization with the server
             DateTime now = rtc.now();
+            uint32_t epochTime = now.unixtime();
             Serial.print("Current RTC time: ");
             Serial.println(now.timestamp());
-            // 
+            // TODO : retrieve NTP time and compare with RTC time to check if it's synched, if not, sync it and update stored timestamps with the new time. For now, we will assume it's synched
 
-            // Send saved data to the server
-            if (isTimeSynched) {
-                String allData = dataStorage.readAll();
-                if (allData.length() > 0) {
-                    int responseCode = wifiManager->sendData("sync", allData);
-                    if (responseCode > 0) {
-                        Serial.println("Data sent successfully with response code: " + String(responseCode));
-                        dataStorage.clear(); // Clear the stored data after successful sync
-                    } else {
-                        Serial.println("Failed to send data to server");
-                    }
+            // Send loadcell logs to the server
+            String hydration_logs = dataStorage.readContent(LOADCELL_DATA_FILE);  // TODO : optimize this by reading in chunks instead of the whole file at once
+            if (hydration_logs.length() > 0) {
+                int responseCode = wifiManager->sendData("/device/logs", hydration_logs, "text/csv");
+                if (responseCode > 0) {
+                    Serial.println("Data sent successfully with response code: " + String(responseCode));
+                    dataStorage.clear(LOADCELL_DATA_FILE); // Clear the stored data after successful sync
                 }
             }
-            // Create a JSON payload to send to the server
-            String payload = "{\"weight\":" + String(weight, 2) + ",\"battery\":" + String(batteryLevel, 2) + "}";
+
+            // Send battery status to the server
+            float batteryLevel = batteryManager.getBatteryLevel();
+            String payload = "{\"epoch\":" + String(epochTime) + ", \"battery\":" + String(batteryLevel, 2) + "}";
             Serial.println("Sending data to server: " + payload);
-            int responseCode = wifiManager->sendData("device", payload);
-            if (responseCode > 0) {
-                Serial.println("Data sent successfully with response code: " + String(responseCode));
-            } else {
-                Serial.println("Failed to send data to server");
-            }
+            wifiManager->sendData("/device/status", payload, "application/json");
         }
     }
 

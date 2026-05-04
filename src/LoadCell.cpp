@@ -17,10 +17,10 @@ void TaskLoadCell(void * pvParameters) {
             lastSaveTime = millis();
             float weight = loadCell->getWeight();
             DateTime now = rtc->now();
-            String timestampStr = String(now.unixtime());
+            String epochStr = String(now.unixtime());
             String weightStr = String(weight, 2); // Convert weight to string with 2 decimal places
             KeyValuePair kvps[] = {
-                {"timestamp", timestampStr.c_str()},
+                {"epoch", epochStr.c_str()},
                 {"weight", weightStr.c_str()},
                 {"stable", loadCell->isStableWeight() ? "1" : "0"}
             };

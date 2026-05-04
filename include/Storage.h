@@ -17,7 +17,7 @@ public:
     bool append(const char* filename, KeyValuePair* kvps, size_t numKvps);
     String readHeader(const char* filename);
     String readContent(const char* filename);
-    bool clear();
+    bool clear(const char* filename);
     void migrateTempFiles(long startTime);
     bool prepareDataForSync();
     bool clearSyncFile();
