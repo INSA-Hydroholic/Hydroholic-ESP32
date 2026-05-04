@@ -4,6 +4,7 @@
 #include <LittleFS.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include <map>
 
 typedef struct key_value_pair {
     const char* key;
