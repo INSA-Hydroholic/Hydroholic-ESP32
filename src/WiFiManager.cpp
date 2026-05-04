@@ -11,11 +11,14 @@ void TaskWiFiManager(void * pvParameters) {
         }
         digitalWrite(2, LOW); // Turn off LED when connected
 
-        vTaskDelay(1000 / portTICK_PERIOD_MS); // Run every 1 second
+        // Synchronize time with NTP server if not already synchronized
+        manager->syncNTP();
+
+        vTaskDelay(DELAY_10_MINS / portTICK_PERIOD_MS);
     }
 }
 
-WiFiManager::WiFiManager() {}
+WiFiManager::WiFiManager(RTC_DS1307* realTimeClock) : rtc(realTimeClock) {}
 
 void WiFiManager::begin(const char* ssid, const char* password, opmode mode) {
     setMode(mode);
@@ -31,8 +34,8 @@ void WiFiManager::begin(const char* ssid, const char* password, opmode mode) {
             this->begin("", "", opmode::CONFIGURATION); // Fallback to AP mode for configuration
             return;
         }
-        _ssid = ssid;
-        _password = password;
+        _ssid = (char*)ssid;
+        _password = (char*)password;
         Serial.println("\nWiFi connected with IP: " + WiFi.localIP().toString());
     }
 }
@@ -106,6 +109,10 @@ bool WiFiManager::disconnectAndDisable() {
 }
 
 bool WiFiManager::syncNTP() {
+    if (!isConnected()) {
+        Serial.println("Cannot synchronize time: WiFi not connected");
+        return false;
+    }
     configTime(0, 0, "pool.ntp.org", "time.nist.gov");
     Serial.println("Synchronizing time with NTP server...");
     time_t now = time(nullptr);
@@ -122,5 +129,7 @@ bool WiFiManager::syncNTP() {
         return false;
     }
     Serial.println("\nTime synchronized successfully: " + String(ctime(&now)));
+    // Update RTC time
+    rtc->adjust(DateTime(now));
     return true;
 }
