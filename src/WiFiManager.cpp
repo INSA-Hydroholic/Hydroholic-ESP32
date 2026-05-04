@@ -26,7 +26,7 @@ void WiFiManager::begin(const char* ssid, const char* password, opmode mode) {
         return;
     } else {
         WiFi.mode(WIFI_STA);
-        if(!connect()) {
+        if(!connect(ssid, password)) {
             Serial.println("\nFailed to connect to WiFi");
             this->begin("", "", opmode::CONFIGURATION); // Fallback to AP mode for configuration
             return;
@@ -50,7 +50,7 @@ int WiFiManager::sendData(const String& endpoint, const String& payload) {
     }
 
     HTTPClient http;
-    http.begin(String(API_URL) + endpoint);
+    http.begin(String(apiURL) + endpoint);
     http.addHeader("Content-Type", "application/json");
 
     int httpResponseCode = http.POST(payload);
@@ -65,11 +65,15 @@ int WiFiManager::sendData(const String& endpoint, const String& payload) {
     return httpResponseCode;
 }
 
-bool WiFiManager::connect() {
+bool WiFiManager::connect(const char* ssid, const char* password) {
     if (isConnected()) {
         return true;
     }
-    WiFi.begin(_ssid, _password);
+    if (ssid && password) {
+        WiFi.begin(ssid, password);
+    } else {
+        WiFi.begin(_ssid, _password);
+    }
     Serial.print("Connecting to WiFi");
     time_t startAttemptTime = millis();
     const unsigned long connectionTimeout = 30000; // 30 seconds timeout for WiFi
@@ -85,12 +89,38 @@ bool WiFiManager::connect() {
     return true;
 }
 
+
+// Returns true if WiFi was disconnected, false if it was not connected or an error occurred
 bool WiFiManager::disconnectAndDisable() {
     if (WiFi.status() == WL_CONNECTED) {
         WiFi.disconnect(true, false); // Disconnect but keep credentials for reconnection
         WiFi.mode(WIFI_OFF); // Turn off WiFi to save power
         Serial.println("WiFi disconnected and disabled");
         return true;
+    } else {
+        Serial.println("WiFi is not connected, nothing to disconnect");
+        WiFi.mode(WIFI_OFF); // Ensure WiFi is off to save power
+        return false;
     }
     return false;
+}
+
+bool WiFiManager::syncNTP() {
+    configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+    Serial.println("Synchronizing time with NTP server...");
+    time_t now = time(nullptr);
+    int retry = 0;
+    const int maxRetries = 10;
+    while (now < 8 * 3600 * 2 && retry < maxRetries) { // Wait until time is set (after Jan 1, 1970)
+        delay(1000);
+        Serial.print(".");
+        now = time(nullptr);
+        retry++;
+    }
+    if (now < 8 * 3600 * 2) {
+        Serial.println("\nFailed to synchronize time with NTP server");
+        return false;
+    }
+    Serial.println("\nTime synchronized successfully: " + String(ctime(&now)));
+    return true;
 }

@@ -6,8 +6,6 @@
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 
-constexpr const char* API_URL = "https://agir.minettoar.org/api/";
-
 void TaskWiFiManager(void * pvParameters);  // Expects a pointer to a WiFiManager instance as parameter
 
 enum opmode {
@@ -22,16 +20,16 @@ class WiFiManager {
         void begin(const char* ssid, const char* password, opmode mode = NORMAL);
         bool isConnected() const;
         int sendData(const String& endpoint, const String& payload); // Returns HTTP status code or -1 on failure
-        bool connect();
+        bool connect(const char* ssid = nullptr, const char* password = nullptr); // Connect to WiFi using provided credentials or stored ones
         bool disconnectAndDisable();
         opmode getMode() const { return _mode; }
         void setMode(opmode mode) { _mode = mode; }
         bool syncNTP();  // Synchronize time with NTP server
-        int retrieveConfigurationFromServer();  // Retrieve associated user ID
 
     private:
         opmode _mode;
-        const char* _ssid;
-        const char* _password;
         const char* _apssid = "Hydroholic-Setup";
+        char* _ssid;
+        char* _password;
+        char* apiURL = "https://agir.minettoar.org/api/";
 };
