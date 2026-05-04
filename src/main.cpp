@@ -4,8 +4,12 @@
 #include "WiFiManager.h"
 #include "BatteryManager.h"
 #include "Storage.h"
+#include <RTCLib.h>
+#include <Wire.h>  // For I2C connections
+#include <time.h>
 
-#define UPDATE_INTERVAL 10000 // Interval for sending data to the server in milliseconds
+#define UPDATE_LOGS_INTERVAL 20000 // Interval for sending logs to the server in milliseconds
+#define UPDATE_BATTERY_INTERVAL 10000 // Interval for updating battery status in milliseconds
 
 #define HX711_DOUT_PIN      17
 #define HX711_SCK_PIN       16
@@ -19,8 +23,12 @@ WiFiManager* wifiManager;
 Storage dataStorage("/data.csv");
 LoadCell loadCell(HX711_DOUT_PIN, HX711_SCK_PIN, 2280.0);
 BatteryManager batteryManager(BATTERY_ADC_PIN);
+RTC_DS1307 rtc;
 
 volatile bool isStorageReady = false;
+volatile bool isTimeSynched = false;
+static unsigned long lastUpdateServerTime = 0;
+static unsigned long lastSaveDataTime = 0;
 
 enum STATE {
     SETUP = 0,
@@ -32,11 +40,17 @@ STATE currentState = SETUP;
 
 void setup() {
     Serial.begin(115200);
+    Wire.begin();  // TODO : check for power optimisations by turning off maybe
+    if (!rtc.begin()) {
+        Serial.println("ERROR : Couldn't communicate with the RTC DS1307");
+    }
+    rtc.adjust(DateTime(F(__DATE__),F(__TIME__)));
 
     if (dataStorage.begin()) {
         isStorageReady = true;
     } else {
-        Serial.println("ERREUR : LittleFS HS");
+        Serial.println("ERROR : Couldn't start LittleFS data storage");
+        // TODO : verify if it should continue or halt here
     }
 
     // Ensure required files exist before starting tasks to avoid creation races
@@ -56,7 +70,7 @@ void setup() {
                 fs.println("CALIB_FACTOR:2280.0");
                 fs.close();
             } else {
-                Serial.println("ERREUR : Impossible de créer config.csv");
+                Serial.println("ERROR : Failed to create config.csv");
             }
         }
     }
@@ -98,20 +112,21 @@ void setup() {
     }
 
     // Run the sensor task on core 1 so it can't starve the core-0 Idle/Watchdog
-    xTaskCreatePinnedToCore(TaskLoadCell, "TaskLoadCell", 10000, &loadCell, 1, NULL, 1);
+    loadcell_task_parameters_t loadCellParams{&loadCell, &dataStorage, &rtc};
+    xTaskCreatePinnedToCore(TaskLoadCell, "TaskLoadCell", 10000, &loadCellParams, 1, NULL, 1);
     xTaskCreatePinnedToCore(TaskBatteryManager, "TaskBatteryManager", 10000, &batteryManager, 1, NULL, 1);
 
     if (currentState == WIFI) {
-        wifiManager = new WiFiManager();
+        wifiManager = new WiFiManager(&rtc);
         wifiManager->begin("Joule", "senha123", opmode::NORMAL);
     } else if (currentState == SETUP) {
-        wifiManager = new WiFiManager();
+        wifiManager = new WiFiManager(&rtc);
         wifiManager->begin("", "", opmode::CONFIGURATION);
     } else if (currentState == BLE) {
         bleManager = new BLEManager("Hydroholic");
         // Create a structure to hold the parameters for the BLE task, since we can only pass a single void* parameter to the task function
-        ble_task_parameters_t* bleParams = new ble_task_parameters_t{&bleManager, &dataStorage, &loadCell, &batteryManager};
-        xTaskCreatePinnedToCore(TaskBLEManager, "TaskBLEManager", 10000, bleParams, 1, NULL, 0);
+        ble_task_parameters_t bleParams{bleManager, &dataStorage, &loadCell, &batteryManager};
+        xTaskCreatePinnedToCore(TaskBLEManager, "TaskBLEManager", 10000, &bleParams, 1, NULL, 0);
     }
 }
 
@@ -122,16 +137,30 @@ void loop() {
         delay(1000);
         return;
     } else if (currentState == WIFI) {
-        // Send data to the server every UPDATE_INTERVAL seconds
-        static unsigned long lastUpdateTime = 0;
         unsigned long currentTime = millis();
-        if (currentTime - lastUpdateTime >= UPDATE_INTERVAL) {
-            lastUpdateTime = currentTime;
+        // Send data to the server every UPDATE_INTERVAL seconds
+        if (currentTime - lastUpdateServerTime >= UPDATE_LOGS_INTERVAL) {
+            lastUpdateServerTime = currentTime;
+            
+            // Get current RTC time for timestamp synchronization with the server
+            DateTime now = rtc.now();
+            Serial.print("Current RTC time: ");
+            Serial.println(now.timestamp());
+            // 
 
-            // Read the latest weight and battery level
-            float weight = loadCell.getWeight();
-            float batteryLevel = batteryManager.getBatteryLevel();
-
+            // Send saved data to the server
+            if (isTimeSynched) {
+                String allData = dataStorage.readAll();
+                if (allData.length() > 0) {
+                    int responseCode = wifiManager->sendData("sync", allData);
+                    if (responseCode > 0) {
+                        Serial.println("Data sent successfully with response code: " + String(responseCode));
+                        dataStorage.clear(); // Clear the stored data after successful sync
+                    } else {
+                        Serial.println("Failed to send data to server");
+                    }
+                }
+            }
             // Create a JSON payload to send to the server
             String payload = "{\"weight\":" + String(weight, 2) + ",\"battery\":" + String(batteryLevel, 2) + "}";
             Serial.println("Sending data to server: " + payload);
