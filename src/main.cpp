@@ -5,7 +5,7 @@
 #include "BatteryManager.h"
 #include "Storage.h"
 
-#define OP_MODE "WIFI" // "WIFI" or "BLE", to select the mode of operation of the device
+#define UPDATE_INTERVAL 10000 // Interval for sending data to the server in milliseconds
 
 #define HX711_DOUT_PIN      17
 #define HX711_SCK_PIN       16
@@ -14,12 +14,21 @@
 #define BUZZER_PIN          23
 #define RST_BUTTON_PIN      18
 
-BLEManager connection("Hydroholic");
+BLEManager* bleManager;
+WiFiManager* wifiManager;
 Storage dataStorage("/data.csv");
 LoadCell loadCell(HX711_DOUT_PIN, HX711_SCK_PIN, 2280.0);
 BatteryManager batteryManager(BATTERY_ADC_PIN);
 
 volatile bool isStorageReady = false;
+
+enum STATE {
+    SETUP = 0,
+    WIFI,
+    BLE
+};
+
+STATE currentState = SETUP;
 
 void setup() {
     Serial.begin(115200);
@@ -71,6 +80,16 @@ void setup() {
             } else {
                 Serial.println("Invalid calibration factor in config.csv, using default.");
             }
+        } else if (line.startsWith("DEV_ID:")) {
+            String devId = line.substring(line.indexOf(':') + 1);
+            Serial.print("Device ID loaded from config: ");
+            Serial.println(devId);
+            // TODO : We could store this device ID in a global variable or pass it to the WiFiManager for use in API calls
+        } else if (line.startsWith("OP_MODE:")) {
+            String opMode = line.substring(line.indexOf(':') + 1);
+            Serial.print("Operation mode loaded from config: ");
+            Serial.println(opMode);
+            currentState = (opMode == "WIFI") ? WIFI : BLE; // Set initial state based on config
         } else {
             Serial.println("No calibration factor found in config.csv, using default.");
         }
@@ -82,18 +101,48 @@ void setup() {
     xTaskCreatePinnedToCore(TaskLoadCell, "TaskLoadCell", 10000, &loadCell, 1, NULL, 1);
     xTaskCreatePinnedToCore(TaskBatteryManager, "TaskBatteryManager", 10000, &batteryManager, 1, NULL, 1);
 
-    if (OP_MODE == "WIFI") {
-        WiFiManager wifiManager;
-        wifiManager.begin("Joule", "senha123", opmode::NORMAL);
-    } else if (OP_MODE == "BLE") {
+    if (currentState == WIFI) {
+        wifiManager = new WiFiManager();
+        wifiManager->begin("Joule", "senha123", opmode::NORMAL);
+    } else if (currentState == SETUP) {
+        wifiManager = new WiFiManager();
+        wifiManager->begin("", "", opmode::CONFIGURATION);
+    } else if (currentState == BLE) {
+        bleManager = new BLEManager("Hydroholic");
         // Create a structure to hold the parameters for the BLE task, since we can only pass a single void* parameter to the task function
-        ble_task_parameters_t* bleParams = new ble_task_parameters_t{&connection, &dataStorage, &loadCell, &batteryManager};
+        ble_task_parameters_t* bleParams = new ble_task_parameters_t{&bleManager, &dataStorage, &loadCell, &batteryManager};
         xTaskCreatePinnedToCore(TaskBLEManager, "TaskBLEManager", 10000, bleParams, 1, NULL, 0);
     }
 }
 
-// Main loop will handle the state machine of the device, orchestrating the setup, mode of operation and other periodic tasks if needed
+// Main loop will handle orchestration of services. It will handle weight updates, time synchronization, data storage, and others.
 void loop() {
-    Serial.println("Main loop heartbeat...");
-    delay(5000);
+    if (currentState == BLE) {
+        // The BLEManager task handles everything, so we just run an infinite loop
+        delay(1000);
+        return;
+    } else if (currentState == WIFI) {
+        // Send data to the server every UPDATE_INTERVAL seconds
+        static unsigned long lastUpdateTime = 0;
+        unsigned long currentTime = millis();
+        if (currentTime - lastUpdateTime >= UPDATE_INTERVAL) {
+            lastUpdateTime = currentTime;
+
+            // Read the latest weight and battery level
+            float weight = loadCell.getWeight();
+            float batteryLevel = batteryManager.getBatteryLevel();
+
+            // Create a JSON payload to send to the server
+            String payload = "{\"weight\":" + String(weight, 2) + ",\"battery\":" + String(batteryLevel, 2) + "}";
+            Serial.println("Sending data to server: " + payload);
+            int responseCode = wifiManager->sendData("device", payload);
+            if (responseCode > 0) {
+                Serial.println("Data sent successfully with response code: " + String(responseCode));
+            } else {
+                Serial.println("Failed to send data to server");
+            }
+        }
+    }
+
+    delay(1000); // Main loop runs every 1 second
 }
