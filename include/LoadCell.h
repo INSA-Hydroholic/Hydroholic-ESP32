@@ -1,16 +1,20 @@
-#ifndef _LOADCELL_H_
-#define _LOADCELL_H_
+#pragma once
 
 #include "HX711.h"
 #include <algorithm> // For std::sort
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include <RTClib.h>
+#include "Storage.h"
 
 #define NUM_SAMPLES 5
 #define STABILITY_SAMPLES 10
 #define STABILITY_THRESHOLD 1.0 // Threshold for considering the weight stable (in grams)
+#define LOADCELL_DATA_FILE "/raw_weight.csv"  // File to log raw weight with timestamps
+#define SAVE_DATA_INTERVAL 5000
 
 void TaskLoadCell(void * pvParameters);  // Expects a pointer to a LoadCell instance as parameter
+
 
 class LoadCell {
   private:
@@ -46,4 +50,8 @@ class LoadCell {
     bool isStableWeight() const; // Returns whether the weight is currently considered stable
 };
 
-#endif // _LOADCELL_H_
+struct loadcell_task_parameters_t {
+    LoadCell* loadCell;
+    Storage* storage;
+    RTC_DS1307* rtc;
+};

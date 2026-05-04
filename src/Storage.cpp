@@ -19,15 +19,48 @@ bool Storage::begin() {
 }
 
 
-bool Storage::append(uint32_t timestamp, float value, bool isSynched) {
-    const char* targetFile = isSynched ? "/data.csv" : "/temp.csv";
+bool Storage::append(const char* filename, KeyValuePair* kvps, size_t numKvps) {
+    if (filename == nullptr || kvps == nullptr || numKvps == 0) {
+        Serial.println("ERROR : Invalid parameters for append, filename or kvps is null or numKvps is zero");
+        return false;
+    }
+
+    // Check if we already have a header for this file, if not store the provided keys as the header for future reference
+    if (_fileHeaders.find(filename) == _fileHeaders.end()) {
+        const char** keys = new const char*[numKvps];
+        for (size_t i = 0; i < numKvps; i++) {
+            keys[i] = kvps[i].key;
+        }
+        _fileHeaders[filename] = std::make_pair(keys, numKvps);
+    } else {
+        // Check if the provided keys match the existing header for this file
+        const char** existingKeys = _fileHeaders[filename].first;
+        size_t existingNumKvps = _fileHeaders[filename].second;
+        if (existingNumKvps != numKvps) {
+            Serial.println("ERROR : Header keys count mismatch for file " + String(filename));
+            return false;
+        }
+        for (size_t i = 0; i < numKvps; i++) {
+            if (strcmp(existingKeys[i], kvps[i].key) != 0) {
+                Serial.println("ERROR : Header keys mismatch for file " + String(filename));
+                return false;
+            }
+        }
+    }
 
     if (xSemaphoreTake(_mutex, portMAX_DELAY)) {
 
         // Ensure the file exists (create if necessary). If open fails, try remounting once.
-        if (!LittleFS.exists(targetFile)) {
-            File testFile = LittleFS.open(targetFile, "w");
+        if (!LittleFS.exists(filename)) {
+            File testFile = LittleFS.open(filename, "w");
             if (testFile) {
+                // Append header line with keys if the file was just created
+                for (size_t i = 0; i < numKvps; i++) {
+                    testFile.print(kvps[i].key);
+                    if (i < numKvps - 1) {
+                        testFile.print(",");
+                    }
+                }
                 testFile.close();
             } else {
                 // Try remounting FS then retry file creation once
@@ -35,30 +68,48 @@ bool Storage::append(uint32_t timestamp, float value, bool isSynched) {
                 LittleFS.end();
                 LittleFS.begin(false);
                 vTaskDelay(20 / portTICK_PERIOD_MS);
-                testFile = LittleFS.open(targetFile, "w");
-                if (testFile) testFile.close();
+                testFile = LittleFS.open(filename, "w");
+                if (testFile) {
+                    // Append header line with keys if the file was just created
+                    for (size_t i = 0; i < numKvps; i++) {
+                        testFile.print(kvps[i].key);
+                        if (i < numKvps - 1) {
+                            testFile.print(",");
+                        }
+                    }
+                    testFile.close();
+                } else {
+                    Serial.println("ERROR : Failed to create file for appending data");
+                    xSemaphoreGive(_mutex);
+                    return false;
+                }
             }
         }
 
-        File file = LittleFS.open(targetFile, "a");
+        File file = LittleFS.open(filename, "a");
         if (!file) {
             // Try remounting and retry once
             vTaskDelay(20 / portTICK_PERIOD_MS);
             LittleFS.end();
             LittleFS.begin(false);
             vTaskDelay(20 / portTICK_PERIOD_MS);
-            file = LittleFS.open(targetFile, "a");
+            file = LittleFS.open(filename, "a");
         }
         
         if (!file) {
-            Serial.printf("Erreur critique : Impossible de créer %s\n", targetFile);
+            Serial.printf("ERROR : Failed to create or open file %s\n", filename);
             xSemaphoreGive(_mutex);
             return false;
         }
-        // Store as: timestamp,value\n
-        file.print(timestamp);
-        file.print(",");
-        file.println(String(value, 2));
+        
+        // Store each value in the CSV file, separated by commas
+        for (size_t i = 0; i < numKvps; i++) {
+            file.print(kvps[i].value);
+            if (i < numKvps - 1) {
+                file.print(",");
+            }
+        }
+        file.println();
         file.close();
         xSemaphoreGive(_mutex);
         return true;
@@ -66,19 +117,49 @@ bool Storage::append(uint32_t timestamp, float value, bool isSynched) {
     return false;
 }
 
-String Storage::readAll() {
-    String data = "";
+String Storage::readHeader(const char* filename) {
+    String headerLine = "";
     if (xSemaphoreTake(_mutex, portMAX_DELAY)) {
-        File file = LittleFS.open(_filename, "r");
+        File file = LittleFS.open(filename, "r");
         if (!file) {
             // Try remount once then retry
             LittleFS.end();
             LittleFS.begin(false);
             vTaskDelay(10 / portTICK_PERIOD_MS);
-            file = LittleFS.open(_filename, "r");
+            file = LittleFS.open(filename, "r");
         }
         if (file) {
+            // Read only the header line (first line) to extract keys
+            if (file.available()) {
+                headerLine = file.readStringUntil('\n');
+            }
+            file.close();
+        }
+        xSemaphoreGive(_mutex);
+    }
+    return headerLine;
+}
+
+String Storage::readContent(const char* filename) {
+    String data = "";
+    if (xSemaphoreTake(_mutex, portMAX_DELAY)) {
+        File file = LittleFS.open(filename, "r");
+        if (!file) {
+            // Try remount once then retry
+            LittleFS.end();
+            LittleFS.begin(false);
+            vTaskDelay(10 / portTICK_PERIOD_MS);
+            file = LittleFS.open(filename, "r");
+        }
+        if (file) {
+            bool isFirstLine = true;
             while (file.available()) {
+                if (isFirstLine) {
+                    // Skip the header line
+                    file.readStringUntil('\n');
+                    isFirstLine = false;
+                    continue;
+                }
                 data += file.readStringUntil('\n');
                 data += '\n';
             }
