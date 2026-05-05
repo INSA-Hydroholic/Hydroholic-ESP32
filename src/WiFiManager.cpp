@@ -30,7 +30,8 @@ void WiFiManager::begin(const char* ssid, const char* password, opmode mode) {
     } else {
         WiFi.mode(WIFI_STA);
         if(!connect(ssid, password)) {
-            Serial.println("\nFailed to connect to WiFi");
+            Serial.println("\nFailed to connect to WiFi. Retrying...");
+            for 
             this->begin("", "", opmode::CONFIGURATION); // Fallback to AP mode for configuration
             return;
         }
@@ -41,6 +42,14 @@ void WiFiManager::begin(const char* ssid, const char* password, opmode mode) {
         if (_deviceID == "0") {
             _deviceID = WiFi.macAddress();
             // TODO : for now we'll be using the macAddress as device ID, but ideally it'd be server issued
+        }
+        // Register the device with the server using the device ID, so it can be identified when sending data
+        int responseCode = sendData("/device/register", "{\"deviceID\":\"" + _deviceID + "\"}", "application/json");
+        if (responseCode > 0) {
+            Serial.println("Device registered successfully with response code: " + String(responseCode));
+        } else {
+            Serial.println("Error registering device: " + String(responseCode));
+            // TODO : handle registration failure (retry, fallback to AP mode for configuration, etc)
         }
     }
 }
@@ -57,8 +66,12 @@ int WiFiManager::sendData(const String& endpoint, const String& payload, const S
         return -1;
     }
 
+    // Parse endpoint to replace :ID with actual device ID for dynamic endpoint generation
+    String parsedEndpoint = endpoint;
+    parsedEndpoint.replace(":ID", _deviceID);
+
     HTTPClient http;
-    http.begin(String(apiURL) + endpoint);
+    http.begin(String(apiURL) + parsedEndpoint);
     http.addHeader("Content-Type", contentType);
 
     int httpResponseCode = http.POST(payload);

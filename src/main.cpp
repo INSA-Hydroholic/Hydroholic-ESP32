@@ -123,12 +123,15 @@ void setup() {
     xTaskCreatePinnedToCore(TaskBatteryManager, "TaskBatteryManager", 10000, &batteryManager, 1, NULL, 1);
 
     if (currentState == STATE::WIFI) {
+        Serial.println("Running in WIFI mode.");
         wifiManager = new WiFiManager(&rtc, deviceID);
         wifiManager->begin(WIFI_SSID, WIFI_PASS, opmode::NORMAL);  // Defined in environment.ini
     } else if (currentState == STATE::SETUP) {
+        Serial.println("Running in SETUP mode. Starting WiFi AP for configuration.");
         wifiManager = new WiFiManager(&rtc, deviceID);
         wifiManager->begin(NULL, NULL, opmode::CONFIGURATION);
     } else if (currentState == STATE::BLE) {
+        Serial.println("Running in BLE mode.");
         bleManager = new BLEManager("Hydroholic");
         // Create a structure to hold the parameters for the BLE task, since we can only pass a single void* parameter to the task function
         ble_task_parameters_t bleParams{bleManager, &dataStorage, &loadCell, &batteryManager};
@@ -158,7 +161,7 @@ void loop() {
             // Send loadcell logs to the server
             String hydration_logs = dataStorage.readContent(LOADCELL_DATA_FILE);  // TODO : optimize this by reading in chunks instead of the whole file at once
             if (hydration_logs.length() > 0) {
-                int responseCode = wifiManager->sendData("/device/logs", hydration_logs, "text/csv");
+                int responseCode = wifiManager->sendData("/device/:ID/logs", hydration_logs, "text/csv");
                 if (responseCode > 0) {
                     Serial.println("Data sent successfully with response code: " + String(responseCode));
                     dataStorage.clear(LOADCELL_DATA_FILE); // Clear the stored data after successful sync
@@ -169,7 +172,7 @@ void loop() {
             float batteryLevel = batteryManager.getBatteryLevel();
             String payload = "{\"epoch\":" + String(epochTime) + ", \"battery\":" + String(batteryLevel, 2) + "}";
             Serial.println("Sending data to server: " + payload);
-            wifiManager->sendData("/device/status", payload, "application/json");
+            wifiManager->sendData("/device/:ID/status", payload, "application/json");
         }
     }
 
