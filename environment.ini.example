@@ -1,0 +1,5 @@
+; The following are example values for the secrets. These are used mainly for development and testing purposes. For production, you should create an `environment.ini` file with the actual values and make sure to add it to `.gitignore` to avoid committing sensitive information to version control.
+[secrets]
+wifi_ssid = "YOUR_WIFI_SSID"
+wifi_pass = "YOUR_WIFI_PASSWORD"
+apiURL = "https://your.api.url/here"

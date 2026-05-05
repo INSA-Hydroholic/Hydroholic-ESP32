@@ -1,7 +1,10 @@
 #include "LoadCell.h"
 
 void TaskLoadCell(void * pvParameters) {
-    LoadCell* loadCell = static_cast<LoadCell*>(pvParameters);
+    loadcell_task_parameters_t* params = static_cast<loadcell_task_parameters_t*>(pvParameters);
+    LoadCell* loadCell = params->loadCell;
+    Storage* dataStorage = params->storage;
+    RTC_DS1307 *rtc = params->rtc;
     unsigned long lastSaveTime = 0;
     for(;;) {
         loadCell->measureWeight();
@@ -9,6 +12,24 @@ void TaskLoadCell(void * pvParameters) {
         Serial.print(loadCell->getWeight());
         Serial.print(" g, Stable: ");
         Serial.println(loadCell->isStableWeight() ? "Yes" : "No");
+
+        if (millis() - lastSaveTime >= SAVE_DATA_INTERVAL) {
+            lastSaveTime = millis();
+            float weight = loadCell->getWeight();
+            DateTime now = rtc->now();
+            String epochStr = String(now.unixtime());
+            String weightStr = String(weight, 2); // Convert weight to string with 2 decimal places
+            KeyValuePair kvps[] = {
+                {"epoch", epochStr.c_str()},
+                {"weight", weightStr.c_str()},
+                {"stable", loadCell->isStableWeight() ? "1" : "0"}
+            };
+            dataStorage->append(LOADCELL_DATA_FILE, kvps, 3);
+            Serial.print("Saved weight data: ");
+            Serial.print(weight);
+            Serial.print(" g at time ");
+            Serial.println(now.timestamp());
+        }
         
         vTaskDelay(500 / portTICK_PERIOD_MS);  // Run every 500 ms
     }

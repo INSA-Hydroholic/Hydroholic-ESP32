@@ -15,9 +15,6 @@ void TaskBLEManager(void * pvParameters) {
 
     manager->begin(dataStorage, loadCell, batteryManager);
 
-    // Free the parameters structure that has been allocated in main after extracting the pointers
-    delete params;
-
     // Volatile variables are used to avoid compiler optimizations that could interfere with the state machine logic, since these variables can be modified by both the BLE callbacks and this task loop.
     volatile bool isTimeSynched = false;
     manager->setTimeSynched(&isTimeSynched);
