@@ -44,7 +44,14 @@ void setup() {
     if (!rtc.begin()) {
         Serial.println("ERROR : Couldn't communicate with the RTC DS1307");
     }
-    rtc.adjust(DateTime(F(__DATE__),F(__TIME__)));
+
+    // Retrieve rtc time, if it's later than the compile time, it means the rtc has a valid time (either from previous sync or from battery backup) and we can use it. Otherwise, we set it to the compile time as a fallback
+    if (rtc.now().unixtime() > DateTime(F(__DATE__),F(__TIME__)).unixtime()) {
+        Serial.println("RTC time is valid, using it.");
+    } else {
+        Serial.println("RTC time is not valid, setting it to compile time.");
+        rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+    }
 
     if (dataStorage.begin()) {
         isStorageReady = true;
@@ -122,6 +129,7 @@ void setup() {
     xTaskCreatePinnedToCore(TaskLoadCell, "TaskLoadCell", 10000, &loadCellParams, 1, NULL, 1);
     xTaskCreatePinnedToCore(TaskBatteryManager, "TaskBatteryManager", 10000, &batteryManager, 1, NULL, 1);
 
+    // Run WiFi and BLE tasks on core 0, since drivers already run there anyways.
     if (currentState == STATE::WIFI) {
         Serial.println("Running in WIFI mode.");
         wifiManager = new WiFiManager(&rtc, deviceID);
@@ -166,6 +174,9 @@ void loop() {
                 if(wifiManager->sendData("/device/:ID/logs", hydration_logs, "text/csv")) {
                     Serial.println("Data sent successfully.");
                     dataStorage.clear(LOADCELL_DATA_FILE); // Clear the stored data after successful sync
+                } else {
+                    Serial.println("Error sending logs to server.");
+                    // TODO : handle failed data sync (retry mechanism, etc)
                 }
             }
 
