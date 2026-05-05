@@ -2,7 +2,7 @@
 
 void TaskWiFiManager(void * pvParameters) {
     WiFiManager* manager = static_cast<WiFiManager*>(pvParameters);
-    unsigned long lastNTPSyncTime = 0;
+    unsigned long lastNTPSyncTime = millis();
     for(;;) {
         if (!manager->isConnected()) {
             // Blink builtin LED to indicate waiting for WiFi connection
@@ -14,12 +14,8 @@ void TaskWiFiManager(void * pvParameters) {
 
         // Synchronize time with NTP server if not already synchronized
         if (millis() - lastNTPSyncTime > NTP_SYNC_INTERVAL) {
-            if (manager->syncNTP()) {
-                Serial.println("Time synchronized with NTP server : " + manager->getCurrentTime());
-                lastNTPSyncTime = millis();
-            } else {
-                Serial.println("Error synchronizing time with NTP server");
-            }
+            lastNTPSyncTime = millis();
+            manager->syncNTP();
         }
 
         vTaskDelay(500 / portTICK_PERIOD_MS);
@@ -78,10 +74,17 @@ bool WiFiManager::sendData(const String& endpoint, const String& payload, const 
 
     HTTPClient http;
     http.begin(String(apiURL) + parsedEndpoint);
+    Serial.println("Sending POST request to: " + String(apiURL) + parsedEndpoint);
     http.addHeader("Content-Type", contentType);
 
     int httpResponseCode = http.POST(payload);
     String responseBody = http.getString();
+
+    if (httpResponseCode > 0) {
+        Serial.println("HTTP Response code: " + String(httpResponseCode));
+    } else {
+        Serial.println("Error on sending POST: " + String(http.errorToString(httpResponseCode)));
+    }
 
     if (httpResponseCode >= 200 && httpResponseCode < 300) {
         Serial.println("Data sent successfully, response code: " + String(httpResponseCode));
@@ -115,7 +118,6 @@ bool WiFiManager::connect(const char* ssid, const char* password, bool retry) {
     time_t startAttemptTime = millis();
     while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < CONNECTION_TIMEOUT) {
         delay(500);
-        Serial.print(".");
     }
 
     // If connection failed, retry after a delay
