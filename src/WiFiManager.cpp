@@ -75,8 +75,18 @@ int WiFiManager::sendData(const String& endpoint, const String& payload, const S
     http.addHeader("Content-Type", contentType);
 
     int httpResponseCode = http.POST(payload);
-    if (httpResponseCode > 0) {
+    String responseBody = http.getString();
+
+    if (httpResponseCode >= 200 && httpResponseCode < 300) {
         Serial.println("Data sent successfully, response code: " + String(httpResponseCode));
+        if (responseBody.length() > 0) {
+            Serial.println("Server response: " + responseBody);
+        }
+    } else if (httpResponseCode > 0) {
+        Serial.println("Error sending data, response code: " + String(httpResponseCode));
+        if (responseBody.length() > 0) {
+            Serial.println("Server response: " + responseBody);
+        }
     } else {
         Serial.println("Error sending data: " + String(http.errorToString(httpResponseCode)));
     }
@@ -95,7 +105,7 @@ bool WiFiManager::connect(const char* ssid, const char* password) {
     } else {
         WiFi.begin(_ssid, _password);
     }
-    Serial.print("Connecting to WiFi");
+    Serial.println("Connecting to WiFi...");
     time_t startAttemptTime = millis();
     const unsigned long connectionTimeout = 30000; // 30 seconds timeout for WiFi
     while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < connectionTimeout) {
