@@ -4,19 +4,6 @@ void TaskWiFiManager(void * pvParameters) {
     WiFiManager* manager = static_cast<WiFiManager*>(pvParameters);
     unsigned long lastNTPSyncTime = millis();
     for(;;) {
-        if (!manager->isConnected()) {
-            // 3 rapid blinks of the LED to indicate WiFi connection failure
-            for (int i = 0; i < 3; i++) {
-                digitalWrite(2, HIGH);
-                vTaskDelay(100 / portTICK_PERIOD_MS);
-                digitalWrite(2, LOW);
-                vTaskDelay(100 / portTICK_PERIOD_MS);
-            }
-            vTaskDelay(WIFI_DISCONNECT_BLINK_INTERVAL / portTICK_PERIOD_MS);
-            continue;
-        }
-        digitalWrite(2, LOW); // Turn off LED when connected
-
         // Synchronize time with NTP server if not already synchronized
         if (millis() - lastNTPSyncTime > NTP_SYNC_INTERVAL) {
             lastNTPSyncTime = millis();
