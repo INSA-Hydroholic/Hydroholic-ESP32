@@ -6,11 +6,18 @@ Storage::Storage(const char* filename) : _filename(filename) {
 }
 
 bool Storage::begin() {
-    if (!LittleFS.begin(true)) { 
-        Serial.println("LittleFS Mount Failed and Format Failed");
+    try {
+        if (!LittleFS.begin(true)) {
+            Serial.println("LittleFS Mount Failed and Format Failed");
+            return false;
+        }
+        return true;
+    } catch (const std::exception& e) {
+        Serial.print("Exception during LittleFS initialization: ");
+        Serial.println(e.what());
         return false;
     }
-    return true;
+    return false;
 }
 
 

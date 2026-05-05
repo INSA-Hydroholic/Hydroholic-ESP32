@@ -209,15 +209,6 @@ void HMIManager::turnOffLEDs() {
         xSemaphoreTake(hmiSemaphore, portMAX_DELAY);
         blinkLEDs = false; // Stop any ongoing blinking pattern
         xSemaphoreGive(hmiSemaphore);
-        int currentBrightness = analogRead(ledsPin); // Read current brightness to check if LEDs are on
-        while(currentBrightness > 0) { // Gradually turn off LEDs if they are currently on
-            currentBrightness -= 5; // Decrease brightness step by step for a smoother turn off effect
-            if (currentBrightness < 0) {
-                currentBrightness = 0; // Ensure brightness does not go below 0
-            }
-            analogWrite(ledsPin, currentBrightness);
-            vTaskDelay(50 / portTICK_PERIOD_MS); // Delay between brightness changes for a smoother effect
-        }
         analogWrite(ledsPin, 0); // Turn off LEDs
     } else {
         Serial.println("Warning: hmiSemaphore is not initialized, cannot turn off LEDs.");

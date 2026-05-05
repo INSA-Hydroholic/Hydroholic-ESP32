@@ -20,7 +20,7 @@
 BLEManager* bleManager;
 WiFiManager* wifiManager;
 Storage dataStorage("/data.csv");
-LoadCell loadCell(HX711_DOUT_PIN, HX711_SCK_PIN, 2280.0);
+LoadCell loadCell(HX711_DOUT_PIN, HX711_SCK_PIN, 1000.0);
 BatteryManager batteryManager(BATTERY_ADC_PIN);
 RTC_DS1307 rtc;
 HMIManager hmiManager(RST_BUTTON_PIN, LED_PIN, BUZZER_PIN);
@@ -58,6 +58,7 @@ void setup() {
         isStorageReady = true;
     } else {
         Serial.println("ERROR : Couldn't start LittleFS data storage");
+        ESP.restart();  // Restart to attempt recovery from partitioning
         // TODO : verify if it should continue or halt here
     }
 
@@ -75,7 +76,7 @@ void setup() {
             File fs = LittleFS.open("/config.csv", "a");
             // Set default calibration factor in config.csv if it doesn't exist
             if (fs) {
-                fs.println("CALIB_FACTOR:2280.0");
+                fs.println("CALIB_FACTOR:1000.0");
                 fs.close();
             } else {
                 Serial.println("ERROR : Failed to create config.csv");
