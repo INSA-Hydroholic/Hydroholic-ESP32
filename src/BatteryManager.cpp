@@ -10,7 +10,7 @@ void TaskBatteryManager(void * pvParameters) {
         Serial.print(batteryManager->getBatteryVoltage());
         Serial.print("  Raw ADC : ");
         Serial.println(batteryManager->getRawAdc());
-        vTaskDelay(500 / portTICK_PERIOD_MS);  // Run every 500 ms
+        vTaskDelay(DELAY_10_SECS / portTICK_PERIOD_MS);  // Run every 10s
     }
 }
 

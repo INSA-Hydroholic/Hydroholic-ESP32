@@ -6,8 +6,8 @@
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include <RTClib.h>
+#include "constants.h"
 
-#define DELAY_10_MINS 600000  // 10 minutes in milliseconds
 #define CONNECTION_TIMEOUT 30000 // 30 seconds timeout for WiFi
 #define CONNECTION_RETRY_DELAY 2 * 60 * 1000 // 2 minutes delay before retrying WiFi connection
 #define CONNECTION_RETRY_COUNT 5

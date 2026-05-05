@@ -8,9 +8,6 @@
 #include <Wire.h>  // For I2C connections
 #include <time.h>
 
-#define UPDATE_LOGS_INTERVAL 20000 // Interval for sending logs to the server in milliseconds
-#define UPDATE_BATTERY_INTERVAL 10000 // Interval for updating battery status in milliseconds
-
 #define HX711_DOUT_PIN      17
 #define HX711_SCK_PIN       16
 #define LED_PIN             19

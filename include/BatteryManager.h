@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include "constants.h"
 #include "soc/adc_channel.h"
 
 #define BATTERY_NUMBER_OF_SAMPLES 5

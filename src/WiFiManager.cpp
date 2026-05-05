@@ -2,6 +2,7 @@
 
 void TaskWiFiManager(void * pvParameters) {
     WiFiManager* manager = static_cast<WiFiManager*>(pvParameters);
+    unsigned long lastNTPSyncTime = 0;
     for(;;) {
         if (!manager->isConnected()) {
             // Blink builtin LED to indicate waiting for WiFi connection
@@ -12,12 +13,16 @@ void TaskWiFiManager(void * pvParameters) {
         digitalWrite(2, LOW); // Turn off LED when connected
 
         // Synchronize time with NTP server if not already synchronized
-        manager->syncNTP();
-        Serial.print("Time synchronized with NTP server :");
-        Serial.println(manager->getCurrentTime());
+        if (millis() - lastNTPSyncTime > NTP_SYNC_INTERVAL) {
+            if (manager->syncNTP()) {
+                Serial.println("Time synchronized with NTP server : " + manager->getCurrentTime());
+                lastNTPSyncTime = millis();
+            } else {
+                Serial.println("Error synchronizing time with NTP server");
+            }
+        }
 
-        //vTaskDelay(DELAY_10_MINS / portTICK_PERIOD_MS);
-        vTaskDelay(5000 / portTICK_PERIOD_MS);
+        vTaskDelay(500 / portTICK_PERIOD_MS);
     }
 }
 

@@ -7,7 +7,7 @@
 #include <RTClib.h>
 #include "Storage.h"
 
-#define NUM_SAMPLES 5
+#define LOADCELL_NUM_SAMPLES 5
 #define STABILITY_SAMPLES 10
 #define STABILITY_THRESHOLD 1.0 // Threshold for considering the weight stable (in grams)
 #define LOADCELL_DATA_FILE "/raw_weight.csv"  // File to log raw weight with timestamps
@@ -27,7 +27,7 @@ class LoadCell {
     float history[STABILITY_SAMPLES];              // Circular buffer to store recent weight values for stability analysis
     int historyCount = 0;           // Number of valid entries currently present in history
     float calibration_factor;
-    float samples[NUM_SAMPLES];     // Array to store multiple readings for post-processing (reduced for responsiveness)
+    float samples[LOADCELL_NUM_SAMPLES];     // Array to store multiple readings for post-processing (reduced for responsiveness)
     float emaValue;                 // Variable to store the current EMA (exponential moving average) value
     bool emaInitialized;
     const float EMA_ALPHA = 0.5;    // Smoothing factor for EMA (0 < EMA_ALPHA <= 1, smaller is smoother but less responsive)

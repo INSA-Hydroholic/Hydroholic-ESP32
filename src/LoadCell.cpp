@@ -115,13 +115,13 @@ float LoadCell::getCalibrationFactor() {
 void LoadCell::measureWeight() {  // This method should be called every second or so
     if (xSemaphoreTake(_scaleMutex, portMAX_DELAY) == pdTRUE) {
         // Read a reduced number of samples to avoid long blocking periods
-        for (int i = 0; i < NUM_SAMPLES; i++) {
+        for (int i = 0; i < LOADCELL_NUM_SAMPLES; i++) {
             samples[i] = scale.get_units(3); // Smaller per-read averaging for responsiveness
         }
 
         // Sort the samples to find the median
-        std::sort(samples, samples + NUM_SAMPLES);
-        float median = samples[NUM_SAMPLES / 2]; // Middle value after sorting (median)
+        std::sort(samples, samples + LOADCELL_NUM_SAMPLES);
+        float median = samples[LOADCELL_NUM_SAMPLES / 2]; // Middle value after sorting (median)
 
         // Update EMA and history under the same lock used by tare/calibration updates.
         if (!emaInitialized) {
