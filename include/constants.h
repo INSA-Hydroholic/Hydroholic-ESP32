@@ -11,6 +11,25 @@
 
 #define UPDATE_LOGS_INTERVAL 20000 // Interval for sending logs in milliseconds
 #define UPDATE_BATTERY_INTERVAL 10000 // Interval for updating battery status in milliseconds
-#define NTP_SYNC_INTERVAL 10*1000 // Interval for synchronizing time with NTP server in milliseconds
 
+/* ============== WIFI MANAGER CONSTANTS ============== */
+
+#define NTP_SYNC_INTERVAL 10*1000 // Interval for synchronizing time with NTP server in milliseconds
+#define WIFI_CONNECTION_TIMEOUT 30000 // Timeout for WiFi connection attempts in milliseconds
+#define WIFI_RETRY_DELAY 2 * 60 * 1000 // Delay before retrying to connect to WiFi in milliseconds
+#define WIFI_RETRY_COUNT 5 // Number of times to retry WiFi connection before falling back to AP mode for configuration
+#define WIFI_DISCONNECT_BLINK_INTERVAL 5000 // Interval between blinking sequences when WiFi connection fails in milliseconds
+
+/* ==================================================== */
+/* =============== LOAD CELL CONSTANTS ================ */
+
+#define LOADCELL_SAVE_DATA_INTERVAL 10000    // Interval for saving load cell data in milliseconds
+#define LOADCELL_MEASURE_INTERVAL 1000      // Interval for measuring weight in milliseconds
+
+/* ==================================================== */
+/* ============ BATTERY MANAGER CONSTANTS ============= */
+
+#define BATTERY_MEASURE_INTERVAL 20000 // Interval for measuring battery status in milliseconds
+
+/* ==================================================== */
 #endif

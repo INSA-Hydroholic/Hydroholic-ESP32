@@ -5,9 +5,14 @@ void TaskWiFiManager(void * pvParameters) {
     unsigned long lastNTPSyncTime = millis();
     for(;;) {
         if (!manager->isConnected()) {
-            // Blink builtin LED to indicate waiting for WiFi connection
-            digitalWrite(2, millis() / 500 % 2);
-            vTaskDelay(100 / portTICK_PERIOD_MS);
+            // 3 rapid blinks of the LED to indicate WiFi connection failure
+            for (int i = 0; i < 3; i++) {
+                digitalWrite(2, HIGH);
+                vTaskDelay(100 / portTICK_PERIOD_MS);
+                digitalWrite(2, LOW);
+                vTaskDelay(100 / portTICK_PERIOD_MS);
+            }
+            vTaskDelay(WIFI_DISCONNECT_BLINK_INTERVAL / portTICK_PERIOD_MS);
             continue;
         }
         digitalWrite(2, LOW); // Turn off LED when connected

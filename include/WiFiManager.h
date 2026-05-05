@@ -8,10 +8,6 @@
 #include <RTClib.h>
 #include "constants.h"
 
-#define CONNECTION_TIMEOUT 30000 // 30 seconds timeout for WiFi
-#define CONNECTION_RETRY_DELAY 2 * 60 * 1000 // 2 minutes delay before retrying WiFi connection
-#define CONNECTION_RETRY_COUNT 5
-
 void TaskWiFiManager(void * pvParameters);  // Expects a pointer to a WiFiManager instance as parameter
 
 enum opmode {
