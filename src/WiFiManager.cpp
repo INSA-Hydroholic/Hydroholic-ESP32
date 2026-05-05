@@ -121,19 +121,19 @@ bool WiFiManager::connect(const char* ssid, const char* password, bool retry) {
     }
     Serial.println("Connecting to WiFi...");
     time_t startAttemptTime = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < CONNECTION_TIMEOUT) {
+    while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < WIFI_CONNECTION_TIMEOUT) {
         delay(500);
     }
 
     // If connection failed, retry after a delay
     if (retry) {
-        vTaskDelay(CONNECTION_RETRY_DELAY / portTICK_PERIOD_MS);
-        for (int attempt = 1; attempt <= CONNECTION_RETRY_COUNT; attempt++) {
-            Serial.println("\nRetrying WiFi connection, attempt " + String(attempt) + " of " + String(CONNECTION_RETRY_COUNT));
+        vTaskDelay(WIFI_RETRY_DELAY / portTICK_PERIOD_MS);
+        for (int attempt = 1; attempt <= WIFI_RETRY_COUNT; attempt++) {
+            Serial.println("\nRetrying WiFi connection, attempt " + String(attempt) + " of " + String(WIFI_RETRY_COUNT));
             if (connect(ssid, password, false)) {
                 return true;
             }
-            vTaskDelay(CONNECTION_RETRY_DELAY / portTICK_PERIOD_MS);
+            vTaskDelay(WIFI_RETRY_DELAY / portTICK_PERIOD_MS);
         }
     }
 

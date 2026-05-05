@@ -32,4 +32,9 @@
 #define BATTERY_MEASURE_INTERVAL 20000 // Interval for measuring battery status in milliseconds
 
 /* ==================================================== */
+/* ============== HMI MANAGER CONSTANTS =============== */
+
+#define HMI_RESET_HOLD_PRESS_DURATION 10000 // Duration in milliseconds to consider a reset button press as a reset request
+
+/* ==================================================== */
 #endif

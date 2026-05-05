@@ -3,7 +3,9 @@
 #include "BLEManager.h"
 #include "WiFiManager.h"
 #include "BatteryManager.h"
+#include "HMIManager.h"
 #include "Storage.h"
+#include "constants.h"
 #include <RTCLib.h>
 #include <Wire.h>  // For I2C connections
 #include <time.h>
@@ -21,6 +23,7 @@ Storage dataStorage("/data.csv");
 LoadCell loadCell(HX711_DOUT_PIN, HX711_SCK_PIN, 2280.0);
 BatteryManager batteryManager(BATTERY_ADC_PIN);
 RTC_DS1307 rtc;
+HMIManager hmiManager(RST_BUTTON_PIN, LED_PIN, BUZZER_PIN);
 
 volatile bool isStorageReady = false;
 volatile bool isTimeSynched = false;
@@ -82,6 +85,7 @@ void setup() {
     pinMode(2, OUTPUT); // Builtin LED for status indication
     loadCell.begin();
     batteryManager.begin();
+    hmiManager.begin();
 
     String deviceID = "0";
     // Search for existing configuration in config.csv
@@ -125,6 +129,9 @@ void setup() {
     loadcell_task_parameters_t loadCellParams{&loadCell, &dataStorage, &rtc};
     xTaskCreatePinnedToCore(TaskLoadCell, "TaskLoadCell", 10000, &loadCellParams, 1, NULL, 1);
     xTaskCreatePinnedToCore(TaskBatteryManager, "TaskBatteryManager", 10000, &batteryManager, 1, NULL, 1);
+    hmi_task_parameters_t hmiParams{&hmiManager};
+    xTaskCreatePinnedToCore(TaskHMIManager, "TaskHMIManager", 10000, &hmiParams, 1, NULL, 1);
+    xTaskCreatePinnedToCore(TaskBlinkLEDs, "TaskBlinkLEDs", 10000, &hmiParams, 1, NULL, 1);
 
     // Run WiFi and BLE tasks on core 0, since drivers already run there anyways.
     if (currentState == STATE::WIFI) {
@@ -146,8 +153,21 @@ void setup() {
     }
 }
 
-// Main loop will handle orchestration of services. It will handle weight updates, time synchronization, data storage, and others.
+// The main loop will handle the orchestration of services
 void loop() {
+    // RESET Request handling
+    // TODO : clear storage and safely reset the microcontroller
+    // Start blinking LEDs to confirm the button press has been registered and a reset request is being processed while waiting for the reset duration to be reached in the TaskHMIManager
+    if (hmiManager.getResetRequest()) {
+        Serial.println("Reset requested...");
+        hmiManager.startBlinkingLEDs();
+        // dataStorage.clear(LOADCELL_DATA_FILE);
+        // dataStorage.clear(TEMP_DATA_FILE);
+        // dataStorage.clear(CONFIG_DATA_FILE);
+        // delay(2000); // Wait for 2 seconds to allow the user to see the indication before restarting, adjust as needed
+        // ESP.restart();
+    }
+
     if (currentState == STATE::BLE) {
         // The BLEManager task handles everything, so we just run an infinite loop
         delay(1000);
@@ -183,7 +203,9 @@ void loop() {
             Serial.println("Sending data to server: " + payload);
             wifiManager->sendData("/device/:ID/status", payload, "application/json");
         }
+        
+        // Retrieve alert status from the server every ALERT_CHECK_INTERVAL seconds to check if we need to trigger an alert on the device
     }
 
-    delay(1000); // Main loop runs every 1 second
+    vTaskDelay(250 / portTICK_PERIOD_MS); // Main loop runs every 250 ms
 }
