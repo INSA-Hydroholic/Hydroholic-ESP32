@@ -8,6 +8,9 @@
 #include <RTClib.h>
 
 #define DELAY_10_MINS 600000  // 10 minutes in milliseconds
+#define CONNECTION_TIMEOUT 30000 // 30 seconds timeout for WiFi
+#define CONNECTION_RETRY_DELAY 2 * 60 * 1000 // 2 minutes delay before retrying WiFi connection
+#define CONNECTION_RETRY_COUNT 5
 
 void TaskWiFiManager(void * pvParameters);  // Expects a pointer to a WiFiManager instance as parameter
 
@@ -22,13 +25,14 @@ class WiFiManager {
         WiFiManager(RTC_DS1307* realTimeClock, String deviceID = "0");
         void begin(const char* ssid, const char* password, opmode mode = NORMAL);
         bool isConnected() const;
-        int sendData(const String& endpoint, const String& payload, const String& contentType = "text/plain"); // Returns HTTP status code or -1 on failure
-        bool connect(const char* ssid = nullptr, const char* password = nullptr); // Connect to WiFi using provided credentials or stored ones
+        bool sendData(const String& endpoint, const String& payload, const String& contentType = "text/plain"); // Returns true on success, false on failure
+        bool connect(const char* ssid = nullptr, const char* password = nullptr, bool retry = true); // Connect to WiFi using provided credentials or stored ones
         bool disconnectAndDisable();
         opmode getMode() const { return _mode; }
         void setMode(opmode mode) { _mode = mode; }
         bool syncNTP();  // Synchronize time with NTP server
-        void setAPIURL(const char* url);
+        String getCurrentTime() const { return rtc->now().timestamp(); } // Get current time from RTC as a string
+        void setAPIURL(const String& url);
 
     private:
         opmode _mode;
@@ -36,6 +40,6 @@ class WiFiManager {
         char* _ssid;
         char* _password;
         String _deviceID;
-        char* apiURL = API_URL; // Defined in environment.ini
+        String apiURL = API_URL; // Defined in environment.ini
         RTC_DS1307* rtc;
 };

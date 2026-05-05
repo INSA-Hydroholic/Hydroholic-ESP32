@@ -126,10 +126,12 @@ void setup() {
         Serial.println("Running in WIFI mode.");
         wifiManager = new WiFiManager(&rtc, deviceID);
         wifiManager->begin(WIFI_SSID, WIFI_PASS, opmode::NORMAL);  // Defined in environment.ini
+        xTaskCreatePinnedToCore(TaskWiFiManager, "TaskWiFiManager", 10000, wifiManager, 1, NULL, 0);
     } else if (currentState == STATE::SETUP) {
         Serial.println("Running in SETUP mode. Starting WiFi AP for configuration.");
         wifiManager = new WiFiManager(&rtc, deviceID);
         wifiManager->begin(NULL, NULL, opmode::CONFIGURATION);
+        xTaskCreatePinnedToCore(TaskWiFiManager, "TaskWiFiManager", 10000, wifiManager, 1, NULL, 0);
     } else if (currentState == STATE::BLE) {
         Serial.println("Running in BLE mode.");
         bleManager = new BLEManager("Hydroholic");
@@ -161,9 +163,8 @@ void loop() {
             // Send loadcell logs to the server
             String hydration_logs = dataStorage.readContent(LOADCELL_DATA_FILE);  // TODO : optimize this by reading in chunks instead of the whole file at once
             if (hydration_logs.length() > 0) {
-                int responseCode = wifiManager->sendData("/device/:ID/logs", hydration_logs, "text/csv");
-                if (responseCode > 0) {
-                    Serial.println("Data sent successfully with response code: " + String(responseCode));
+                if(wifiManager->sendData("/device/:ID/logs", hydration_logs, "text/csv")) {
+                    Serial.println("Data sent successfully.");
                     dataStorage.clear(LOADCELL_DATA_FILE); // Clear the stored data after successful sync
                 }
             }

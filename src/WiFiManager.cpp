@@ -13,8 +13,11 @@ void TaskWiFiManager(void * pvParameters) {
 
         // Synchronize time with NTP server if not already synchronized
         manager->syncNTP();
+        Serial.print("Time synchronized with NTP server :");
+        Serial.println(manager->getCurrentTime());
 
-        vTaskDelay(DELAY_10_MINS / portTICK_PERIOD_MS);
+        //vTaskDelay(DELAY_10_MINS / portTICK_PERIOD_MS);
+        vTaskDelay(5000 / portTICK_PERIOD_MS);
     }
 }
 
@@ -31,12 +34,11 @@ void WiFiManager::begin(const char* ssid, const char* password, opmode mode) {
         WiFi.mode(WIFI_STA);
         if(!connect(ssid, password)) {
             Serial.println("\nFailed to connect to WiFi. Retrying...");
-            for 
             this->begin("", "", opmode::CONFIGURATION); // Fallback to AP mode for configuration
             return;
         }
-        _ssid = (char*)ssid;
-        _password = (char*)password;
+        _ssid = strdup(ssid); // Duplicate the string to ensure it remains valid
+        _password = strdup(password); // Duplicate the string to ensure it remains valid
         Serial.println("\nWiFi connected with IP: " + WiFi.localIP().toString());
         // Retrieve device ID if not set, for use in identification when sending data
         if (_deviceID == "0") {
@@ -44,11 +46,10 @@ void WiFiManager::begin(const char* ssid, const char* password, opmode mode) {
             // TODO : for now we'll be using the macAddress as device ID, but ideally it'd be server issued
         }
         // Register the device with the server using the device ID, so it can be identified when sending data
-        int responseCode = sendData("/device/register", "{\"deviceID\":\"" + _deviceID + "\"}", "application/json");
-        if (responseCode > 0) {
-            Serial.println("Device registered successfully with response code: " + String(responseCode));
+        if (sendData("/device/register", "{\"deviceID\":\"" + _deviceID + "\"}", "application/json")) {
+            Serial.println("Device registered successfully.");
         } else {
-            Serial.println("Error registering device: " + String(responseCode));
+            Serial.println("Error registering device.");
             // TODO : handle registration failure (retry, fallback to AP mode for configuration, etc)
         }
     }
@@ -58,12 +59,12 @@ bool WiFiManager::isConnected() const {
     return WiFi.status() == WL_CONNECTED;
 }
 
-int WiFiManager::sendData(const String& endpoint, const String& payload, const String& contentType) {
+bool WiFiManager::sendData(const String& endpoint, const String& payload, const String& contentType) {
     if(connect()) {
         Serial.println("WiFi connected, sending data...");
     } else {
         Serial.println("Error: Unable to connect to WiFi, cannot send data");
-        return -1;
+        return false;
     }
 
     // Parse endpoint to replace :ID with actual device ID for dynamic endpoint generation
@@ -93,10 +94,10 @@ int WiFiManager::sendData(const String& endpoint, const String& payload, const S
     http.end();
 
     disconnectAndDisable(); // Disconnect WiFi to save power after sending data
-    return httpResponseCode;
+    return httpResponseCode >= 200 && httpResponseCode < 300 ? true : false;
 }
 
-bool WiFiManager::connect(const char* ssid, const char* password) {
+bool WiFiManager::connect(const char* ssid, const char* password, bool retry) {
     if (isConnected()) {
         return true;
     }
@@ -107,11 +108,23 @@ bool WiFiManager::connect(const char* ssid, const char* password) {
     }
     Serial.println("Connecting to WiFi...");
     time_t startAttemptTime = millis();
-    const unsigned long connectionTimeout = 30000; // 30 seconds timeout for WiFi
-    while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < connectionTimeout) {
+    while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < CONNECTION_TIMEOUT) {
         delay(500);
         Serial.print(".");
     }
+
+    // If connection failed, retry after a delay
+    if (retry) {
+        vTaskDelay(CONNECTION_RETRY_DELAY / portTICK_PERIOD_MS);
+        for (int attempt = 1; attempt <= CONNECTION_RETRY_COUNT; attempt++) {
+            Serial.println("\nRetrying WiFi connection, attempt " + String(attempt) + " of " + String(CONNECTION_RETRY_COUNT));
+            if (connect(ssid, password, false)) {
+                return true;
+            }
+            vTaskDelay(CONNECTION_RETRY_DELAY / portTICK_PERIOD_MS);
+        }
+    }
+
     if (WiFi.status() != WL_CONNECTED) {
         Serial.println("\nFailed to connect to WiFi");
         return false;
@@ -162,8 +175,8 @@ bool WiFiManager::syncNTP() {
     return true;
 }
 
-void WiFiManager::setAPIURL(const char* url) {
-    apiURL = (char*)url;
-    Serial.println("API URL set to: " + String(apiURL));
+void WiFiManager::setAPIURL(const String& url) {
+    apiURL = url;
+    Serial.println("API URL set to: " + apiURL);
     // TODO : save the API URL in Storage config.csv file for persistence across reboots
 }
