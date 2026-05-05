@@ -64,6 +64,43 @@ void WiFiManager::begin(const char* ssid, const char* password, opmode mode) {
 bool WiFiManager::isConnected() const {
     return WiFi.status() == WL_CONNECTED;
 }
+bool WiFiManager::getData(const String &endpoint, String &response, const String &contentType, const Header* headers, uint8_t numHeaders) {
+    if (!connect()) {
+        Serial.println("Error: Unable to connect to WiFi, cannot get data");
+        return false;
+    }
+
+    // Parse endpoint to replace :ID with actual device ID for dynamic endpoint generation
+    String parsedEndpoint = endpoint;
+    parsedEndpoint.replace(":ID", _deviceID);
+
+    HTTPClient http;
+    http.begin(String(apiURL) + parsedEndpoint);
+    Serial.println("Sending GET request to: " + String(apiURL) + parsedEndpoint);
+
+    // Add headers, if provided
+    if (headers) {
+        for (uint8_t i = 0; i < numHeaders; i++) {
+            String headerName = headers[i].name;
+            String headerValue = headers[i].value;
+            http.addHeader(headerName, headerValue);
+        }
+    }
+
+    int httpResponseCode = http.GET();
+    bool success = false;
+    if (httpResponseCode > 0) {
+        Serial.println("HTTP Response code: " + String(httpResponseCode));
+        response = http.getString();
+        Serial.println("Server response: " + response);
+        success = true;
+    } else {
+        Serial.println("Error on sending GET: " + String(http.errorToString(httpResponseCode)));
+    }
+    http.end();
+    disconnectAndDisable(); // Disconnect WiFi to save power after getting data
+    return success;
+}
 
 bool WiFiManager::sendData(const String& endpoint, const String& payload, const String& contentType) {
     if(connect()) {
@@ -120,13 +157,13 @@ bool WiFiManager::connect(const char* ssid, const char* password, bool retry) {
         WiFi.begin(_ssid, _password);
     }
     Serial.println("Connecting to WiFi...");
-    time_t startAttemptTime = millis();
+    const unsigned long startAttemptTime = millis();
     while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < WIFI_CONNECTION_TIMEOUT) {
-        delay(500);
+        vTaskDelay(100 / portTICK_PERIOD_MS);
     }
 
     // If connection failed, retry after a delay
-    if (retry) {
+    if (retry && WiFi.status() != WL_CONNECTED) {
         vTaskDelay(WIFI_RETRY_DELAY / portTICK_PERIOD_MS);
         for (int attempt = 1; attempt <= WIFI_RETRY_COUNT; attempt++) {
             Serial.println("\nRetrying WiFi connection, attempt " + String(attempt) + " of " + String(WIFI_RETRY_COUNT));
@@ -141,7 +178,9 @@ bool WiFiManager::connect(const char* ssid, const char* password, bool retry) {
         Serial.println("\nFailed to connect to WiFi");
         return false;
     }
-    Serial.println("\nWiFi connected with IP: " + WiFi.localIP().toString());
+    if (retry) {
+        Serial.println("\nWiFi connected with IP: " + WiFi.localIP().toString());
+    }
     return true;
 }
 

@@ -6,16 +6,11 @@ Storage::Storage(const char* filename) : _filename(filename) {
 }
 
 bool Storage::begin() {
-    // Le paramètre 'true' demande à l'ESP32 de formater la Flash 
-    // si elle n'est pas déjà prête.
-    bool success = LittleFS.begin(true); 
-    
-    if (success) {
-        Serial.println("LittleFS monté avec succès !");
-    } else {
-        Serial.println("ÉCHEC critique du montage LittleFS...");
+    if (!LittleFS.begin(true)) { 
+        Serial.println("LittleFS Mount Failed and Format Failed");
+        return false;
     }
-    return success;
+    return true;
 }
 
 

@@ -29,7 +29,7 @@ class HMIManager {
         HMIManager(int resetButtonPin, int ledsPin, int buzzerPin);
         void begin();
         bool resetButtonPressed();      // Checks if the reset button is currently being pressed (regardless of duration)
-        void setResetRequest();         // Sets the reset request flag
+        void setResetRequest(bool request = true);         // Sets the reset request flag
         bool getResetRequest() const;    // True if the reset button has been pressed for more than HMI_RESET_HOLD_PRESS_DURATION
         void remindUser();              // Runs LED and buzzer patterns to remind the user to interact with the device (e.g. to drink water)
         void animateLEDs(unsigned int duration = 2000);
@@ -41,6 +41,8 @@ class HMIManager {
         void stopBlinkingLEDs();
         void setBlinkDuration(unsigned int duration);
         unsigned int getBlinkDuration() const;
+        void turnOffLEDs(); // Immediately turns off the LEDs, can be used to interrupt any ongoing blinking pattern
+        void turnOffBuzzer(); // Immediately turns off the buzzer, can be used to interrupt any ongoing buzzing pattern
 };
 
 struct hmi_task_parameters_t {

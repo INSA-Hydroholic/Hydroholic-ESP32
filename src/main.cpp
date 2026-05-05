@@ -28,6 +28,7 @@ HMIManager hmiManager(RST_BUTTON_PIN, LED_PIN, BUZZER_PIN);
 volatile bool isStorageReady = false;
 volatile bool isTimeSynched = false;
 static unsigned long lastUpdateServerTime = 0;
+static unsigned long lastGetReminderTime = 0;
 static unsigned long lastSaveDataTime = 0;
 
 enum STATE {
@@ -86,6 +87,14 @@ void setup() {
     loadCell.begin();
     batteryManager.begin();
     hmiManager.begin();
+
+    // Flash LEDs twice at startup to indicate the device has booted successfully and is starting the tasks
+    hmiManager.startBlinkingLEDs();
+    hmiManager.animateLEDs(500);
+    delay(300);
+    hmiManager.animateLEDs(500);
+    delay(300);
+    hmiManager.stopBlinkingLEDs();
 
     String deviceID = "0";
     // Search for existing configuration in config.csv
@@ -159,22 +168,50 @@ void loop() {
     // TODO : clear storage and safely reset the microcontroller
     // Start blinking LEDs to confirm the button press has been registered and a reset request is being processed while waiting for the reset duration to be reached in the TaskHMIManager
     if (hmiManager.getResetRequest()) {
+        hmiManager.setResetRequest(false); // Clear the reset request flag to avoid re-entering this block
         Serial.println("Reset requested...");
+        hmiManager.setBlinkDuration(200); // Set a faster blink duration to indicate reset is being processed
         hmiManager.startBlinkingLEDs();
-        // dataStorage.clear(LOADCELL_DATA_FILE);
-        // dataStorage.clear(TEMP_DATA_FILE);
+        dataStorage.clear(LOADCELL_DATA_FILE);
         // dataStorage.clear(CONFIG_DATA_FILE);
-        // delay(2000); // Wait for 2 seconds to allow the user to see the indication before restarting, adjust as needed
+        vTaskDelay(5000 / portTICK_PERIOD_MS); // Wait for 5 seconds to allow the user to see the indication before restarting
         // ESP.restart();
+        Serial.println("Restarting device...");
     }
 
     if (currentState == STATE::BLE) {
         // The BLEManager task handles everything, so we just run an infinite loop
-        delay(1000);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
         return;
     } else if (currentState == STATE::WIFI) {
         unsigned long currentTime = millis();
-        // Send data to the server every UPDATE_INTERVAL seconds
+        // Check if user needs to be reminded to interact with the device every GET_REMINDER_INTERVAL seconds (e.g. to drink water, etc)
+        if (currentTime - lastGetReminderTime >= GET_REMINDER_INTERVAL) {
+            lastGetReminderTime = currentTime;
+            Serial.println("Checking if user needs to be reminded...");
+            // String response = "";
+            // String &responseRef = response; // Need a non-const reference to pass to the getData function
+            // if(wifiManager->getData("/device/:ID/user?"+wifiManager->getDeviceID(), responseRef, "text/plain")) {
+            //     Serial.println("Received associated user ID from server: " + response);
+            //     if (response != "-1") {
+            //         String userID = response; // Store user ID for future use if needed
+            //         response = ""; // Clear response string to reuse it for the next request
+            //         String &responseRef = response; // Update reference to the cleared response string
+            //         if (wifiManager->getData("/device/:ID/reminder?"+wifiManager->getDeviceID(), responseRef, "text/plain")) {
+            //             Serial.println("Received reminder response from server: " + response);
+            //             if (response == "1") {
+            //                 hmiManager.remindUser();
+            //             }
+            //         } else {
+            //             Serial.println("Error checking reminder status from server.");
+            //         }
+            //     }
+            // } else {
+            //     Serial.println("Error checking reminder status from server.");
+            // }
+            hmiManager.remindUser();
+        }
+        // Send data to the server every UPDATE_LOGS_INTERVAL seconds
         if (currentTime - lastUpdateServerTime >= UPDATE_LOGS_INTERVAL) {
             lastUpdateServerTime = currentTime;
             
@@ -188,6 +225,7 @@ void loop() {
             // Send loadcell logs to the server
             String hydration_logs = dataStorage.readContent(LOADCELL_DATA_FILE);  // TODO : optimize this by reading in chunks instead of the whole file at once
             if (hydration_logs.length() > 0) {
+                Serial.println("Sending " + String(hydration_logs.length()) + " bytes of hydration logs to server:\n" + hydration_logs);
                 if(wifiManager->sendData("/device/:ID/logs", hydration_logs, "text/csv")) {
                     Serial.println("Data sent successfully.");
                     dataStorage.clear(LOADCELL_DATA_FILE); // Clear the stored data after successful sync
