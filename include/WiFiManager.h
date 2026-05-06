@@ -8,6 +8,9 @@
 #include <RTClib.h>
 #include "constants.h"
 
+#define AP_MODE_SSID "Hydroholic-Setup"
+#define AP_MODE_PASS "Hydroholic123!"
+
 void TaskWiFiManager(void * pvParameters);  // Expects a pointer to a WiFiManager instance as parameter
 
 enum opmode {
@@ -39,7 +42,6 @@ class WiFiManager {
 
     private:
         opmode _mode;
-        const char* _apssid = "Hydroholic-Setup";
         char* _ssid;
         char* _password;
         String _deviceID;

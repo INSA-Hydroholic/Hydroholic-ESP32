@@ -20,8 +20,8 @@ void WiFiManager::begin(const char* ssid, const char* password, opmode mode) {
     setMode(mode);
     if (mode == opmode::CONFIGURATION) {
         WiFi.mode(WIFI_AP);
-        WiFi.softAP(_apssid, NULL, 1, false, 1); // Open AP with channel 1 and max connections of 1 to avoid interference 
-        Serial.println("WiFi AP started with SSID: " + String(_apssid));
+        WiFi.softAP(AP_MODE_SSID, AP_MODE_PASS, 1, false, 1); // Open AP with channel 1 and max connections of 1 to avoid interference
+        Serial.println("WiFi AP started with SSID: " + String(AP_MODE_SSID));
         return;
     } else {
         WiFi.mode(WIFI_STA);

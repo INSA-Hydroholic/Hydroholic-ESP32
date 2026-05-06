@@ -9,6 +9,7 @@
 #include <RTCLib.h>
 #include <Wire.h>  // For I2C connections
 #include <time.h>
+#include "webpage.h"
 
 #define HX711_DOUT_PIN      17
 #define HX711_SCK_PIN       16
@@ -37,7 +38,7 @@ enum STATE {
     BLE
 };
 
-STATE currentState = WIFI; // Start in WiFi for debugging, MUST be changed to SETUP for production to allow initial configuration
+STATE currentState = SETUP; // Start in WiFi for debugging, MUST be changed to SETUP for production to allow initial configuration
 
 #define NUM_TASKS 5
 TaskHandle_t tasksHandles[NUM_TASKS]; // Array to hold task handles for cleanup and suspending when switching states
@@ -196,10 +197,78 @@ void loop() {
         ESP.restart();
     }
 
-    if (currentState == STATE::BLE) {
+    if (currentState == STATE::SETUP) {
+        // In setup mode, so here we suspend other tasks to ensure they don't interfere with the setup process and consume resources while the user is configuring the device through the WiFi AP. Once the user finishes the configuration and the device restarts
+        for (int i = 0; i < NUM_TASKS; i++) {
+            if (tasksHandles[i] != NULL) {
+                vTaskSuspend(tasksHandles[i]);
+            }
+        }
+        // Initialize Web server 
+        WiFiServer server(80);
+        server.begin();
+
+        for (;;) {
+            WiFiClient client = server.available();
+            if (client) {
+                Serial.println("Client connected");
+                while (client.connected() && !client.available()) {
+                    delay(10);
+                }
+
+                if (client.available()) {
+                    // The first line of the HTTP request contains the method and endpoint, e.g. "GET /setup HTTP/1.1"
+                    String request = client.readStringUntil('\r');
+                    Serial.println("Received request: " + request);
+                    client.readStringUntil('\n'); // Consume the trailing '\n'
+
+                    if (request.indexOf("GET /setup") >= 0) {
+                        Serial.println("Client requested setup "); 
+                        // Flush the remaining HTTP headers from the client
+                        while (client.available()) {
+                            String line = client.readStringUntil('\n');
+                            if (line == "\r") { 
+                                break; // An empty line indicates the end of the headers
+                            }
+                        }
+
+                        // Send the HTTP response headers
+                        client.println("HTTP/1.1 200 OK");
+                        client.println("Content-type: text/html");
+                        client.println("Connection: close");
+                        client.println(); // Crucial: blank line separates headers from body
+
+                        // Send the payload
+                        client.println(index_html); 
+                        
+                    } else if (request.indexOf("POST /save") >= 0) {
+                        
+                        // (You will need additional logic here to read the POST body and parse the parameters)
+                        
+                        client.println("HTTP/1.1 200 OK");
+                        client.println("Content-type: text/plain");
+                        client.println("Connection: close");
+                        client.println();
+                        client.println("Settings saved. Hydrobase is rebooting...");
+                        
+                    } else {  // Handle unknown endpoints with a 404 response
+                        client.println("HTTP/1.1 404 Not Found");
+                        client.println("Connection: close");
+                        client.println();
+                    }
+                }
+                
+                // Give the web browser time to receive the data
+                delay(10);
+                
+                // 5. Close the connection
+                client.stop();
+                Serial.println("Client disconnected.");
+            }
+        }
+    } else if (currentState == STATE::BLE) {
         // The BLEManager task handles everything, so we just run an infinite loop
         vTaskDelay(1000 / portTICK_PERIOD_MS);
-        return;
     } else if (currentState == STATE::WIFI) {
         unsigned long currentTime = millis();
         // Check if user needs to be reminded to interact with the device every GET_REMINDER_INTERVAL seconds (e.g. to drink water, etc)
@@ -257,8 +326,6 @@ void loop() {
             Serial.println("Sending data to server: " + payload);
             wifiManager->sendData("/device/:ID/status", payload, "application/json");
         }
-        
-        // Retrieve alert status from the server every ALERT_CHECK_INTERVAL seconds to check if we need to trigger an alert on the device
     }
 
     vTaskDelay(250 / portTICK_PERIOD_MS); // Main loop runs every 250 ms
