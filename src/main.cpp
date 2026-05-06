@@ -184,18 +184,16 @@ void loop() {
             }
         }
         Serial.println("Reset requested...");
-        hmiManager.setResetRequest(false); // Clear the reset request flag to avoid re-entering this block
-        hmiManager.startBlinkingLEDs();
-        for (int i = 0; i < 5; i++) { // Blink LEDs for 5 seconds to indicate reset request has been registered
-            hmiManager.animateLEDs(200); // Blink for 200 ms
+        ledcDetachPin(LED_PIN);  // Disable any PWM that might be active on the pin
+        for (int i = 0; i < 10; i++) { // Blink LEDs for 5 seconds to indicate reset request has been registered
+            digitalWrite(LED_PIN, HIGH);
+            delay(200);
+            digitalWrite(LED_PIN, LOW);
+            delay(200);
         }
-        delay(1000);
         dataStorage.clear(LOADCELL_DATA_FILE);
-        // ESP.restart();
         Serial.println("Restarting device...");
-        for (;;) {
-            delay(1000); // Infinite loop
-        }
+        ESP.restart();
     }
 
     if (currentState == STATE::BLE) {
