@@ -102,6 +102,7 @@ void setup() {
             String line = configFile.readStringUntil('\n');
             String key = line.substring(0, line.indexOf(':'));
             String value = line.substring(line.indexOf(':') + 1);
+            value.trim(); // Remove any trailing newline or whitespace characters
             Serial.println("Config line - Key: " + key + ", Value: " + value);
             if (key == "STATE") {
                 if (value.startsWith("wifi")) {

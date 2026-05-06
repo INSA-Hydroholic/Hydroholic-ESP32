@@ -162,7 +162,7 @@ bool WiFiManager::connect(const char* ssid, const char* password, bool retry) {
     }
 
     if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("\nFailed to connect to WiFi");
+        Serial.println("\nFailed to connect to WiFi with SSID: " + String(ssid ? ssid : _ssid) + " and password: " + String(password ? password : "********"));
         return false;
     }
     if (retry) {
