@@ -7,13 +7,11 @@ void TaskLoadCell(void * pvParameters) {
     RTC_DS1307 *rtc = params->rtc;
     unsigned long lastSaveTime = 0;
     for(;;) {
-        loadCell->measureWeight();
-        Serial.print("Measured weight: ");
-        Serial.print(loadCell->getWeight());
-        Serial.print(" g, Stable: ");
-        Serial.println(loadCell->isStableWeight() ? "Yes" : "No");
+        if (millis() - lastSaveTime >= LOADCELL_MEASURE_INTERVAL) {
+            loadCell->measureWeight();
+        }
 
-        if (millis() - lastSaveTime >= SAVE_DATA_INTERVAL) {
+        if (millis() - lastSaveTime >= LOADCELL_SAVE_DATA_INTERVAL && loadCell->isStableWeight()) {
             lastSaveTime = millis();
             float weight = loadCell->getWeight();
             DateTime now = rtc->now();

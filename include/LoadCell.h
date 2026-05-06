@@ -6,12 +6,12 @@
 #include "freertos/semphr.h"
 #include <RTClib.h>
 #include "Storage.h"
+#include "constants.h"
 
 #define LOADCELL_NUM_SAMPLES 5
 #define STABILITY_SAMPLES 10
 #define STABILITY_THRESHOLD 1.0 // Threshold for considering the weight stable (in grams)
 #define LOADCELL_DATA_FILE "/raw_weight.csv"  // File to log raw weight with timestamps
-#define SAVE_DATA_INTERVAL 5000
 
 void TaskLoadCell(void * pvParameters);  // Expects a pointer to a LoadCell instance as parameter
 
