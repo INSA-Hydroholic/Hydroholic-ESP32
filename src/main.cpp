@@ -47,10 +47,10 @@ STATE currentState = SETUP; // Start in WiFi for debugging, MUST be changed to S
 TaskHandle_t tasksHandles[NUM_TASKS]; // Array to hold task handles for cleanup and suspending when switching states
 
 // Config buffers with proper allocation
-char confSSID[256];
-char confPassword[256];
-char confApiURL[256];
-char confOrgCode[16];
+char confSSID[256] = WIFI_SSID;
+char confPassword[256] = WIFI_PASS;
+char confApiURL[256] = API_URL;
+char confOrgCode[16] = "";
 
 void setup() {
     Serial.begin(115200);
@@ -161,9 +161,10 @@ void setup() {
     if (currentState == STATE::WIFI) {
         Serial.println("Running in WIFI mode.");
         wifiManager = new WiFiManager(&rtc, deviceID);
-        wifiManager->begin(confSSID, confPassword, opmode::NORMAL);  // Defined in environment.ini
+        // Set API URL and Org Code BEFORE calling begin(), as they are needed during registration
         wifiManager->setAPIURL(confApiURL);
         wifiManager->setOrgCode(confOrgCode);
+        wifiManager->begin(confSSID, confPassword, opmode::NORMAL);  // Defined in environment.ini
         xTaskCreatePinnedToCore(TaskWiFiManager, "TaskWiFiManager", 10000, wifiManager, 1, &tasksHandles[4], 0);
     } else if (currentState == STATE::SETUP) {
         Serial.println("Running in SETUP mode. Starting WiFi AP for configuration.");
@@ -200,6 +201,7 @@ void loop() {
             delay(200);
         }
         dataStorage.clear(LOADCELL_DATA_FILE);
+        dataStorage.clear(CONFIG_FILE);
         Serial.println("Restarting device...");
         ESP.restart();
     }
@@ -277,6 +279,11 @@ void loop() {
 
                         // Save the configuration to config.csv in the format "KEY:VALUE"
                         dataStorage.clear(CONFIG_FILE); // Clear existing config
+
+                        // Check for https:// prefix in API URL and add it if missing to ensure consistency in the stored config and avoid issues when using the URL later
+                        if (!apiURL.startsWith("http://") && !apiURL.startsWith("https://")) {
+                            apiURL = "http://" + apiURL;
+                        }
 
                         File configFile = LittleFS.open(CONFIG_FILE, "w");
                         if (configFile) {

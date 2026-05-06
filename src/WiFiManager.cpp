@@ -14,7 +14,7 @@ void TaskWiFiManager(void * pvParameters) {
     }
 }
 
-WiFiManager::WiFiManager(RTC_DS1307* realTimeClock, String deviceID) : rtc(realTimeClock), _deviceID(deviceID) {}
+WiFiManager::WiFiManager(RTC_DS1307* realTimeClock, String deviceID) : rtc(realTimeClock), _deviceID(deviceID), orgCode(nullptr) {}
 
 void WiFiManager::begin(const char* ssid, const char* password, opmode mode) {
     setMode(mode);
@@ -39,7 +39,8 @@ void WiFiManager::begin(const char* ssid, const char* password, opmode mode) {
             // TODO : for now we'll be using the macAddress as device ID, but ideally it'd be server issued
         }
         // Register the device with the server using the device ID, so it can be identified when sending data
-        if (sendData("/device/register", "{\"deviceID\":\"" + _deviceID + "\", \"connectionCode\":\"" + String(orgCode) + "\"}", "application/json")) {
+        String orgCodeStr = (orgCode != nullptr) ? String(orgCode) : "";
+        if (sendData("/device/register", "{\"deviceID\":\"" + _deviceID + "\", \"connectionCode\":\"" + orgCodeStr + "\"}", "application/json")) {
             Serial.println("Device registered successfully.");
         } else {
             Serial.println("Error registering device.");
