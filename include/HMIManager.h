@@ -21,6 +21,7 @@ class HMIManager {
         int buzzerPin;
         bool blinkLEDs = false;
         unsigned int blinkDuration = 2000; // Default duration for blinking pattern in milliseconds
+        unsigned int numRepetitions = 0; // Number of times to repeat the current pattern, used for patterns that need to be repeated multiple times (e.g. reminders, error indications, etc)
         bool resetRequest = false;
         SemaphoreHandle_t resetButtonSemaphore; // Semaphore to protect access to resetRequest variable
         SemaphoreHandle_t hmiSemaphore; // Semaphore to protect access to HMI outputs (LEDs and buzzer) to avoid conflicts between different tasks trying to use them at the same time
@@ -41,6 +42,8 @@ class HMIManager {
         void stopBlinkingLEDs();
         void setBlinkDuration(unsigned int duration);
         unsigned int getBlinkDuration() const;
+        void setNumRepetitions(unsigned int repetitions);
+        unsigned int getNumRepetitions() const;
         void turnOffLEDs(); // Immediately turns off the LEDs, can be used to interrupt any ongoing blinking pattern
         void turnOffBuzzer(); // Immediately turns off the buzzer, can be used to interrupt any ongoing buzzing pattern
 };

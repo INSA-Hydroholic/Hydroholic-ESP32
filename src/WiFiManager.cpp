@@ -188,7 +188,7 @@ bool WiFiManager::disconnectAndDisable() {
 }
 
 bool WiFiManager::syncNTP() {
-    if (!isConnected()) {
+    if (!connect()) {
         Serial.println("Cannot synchronize time: WiFi not connected");
         return false;
     }
