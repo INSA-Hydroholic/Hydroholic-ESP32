@@ -39,6 +39,9 @@ enum STATE {
 
 STATE currentState = WIFI; // Start in WiFi for debugging, MUST be changed to SETUP for production to allow initial configuration
 
+#define NUM_TASKS 5
+TaskHandle_t tasksHandles[NUM_TASKS]; // Array to hold task handles for cleanup and suspending when switching states
+
 void setup() {
     Serial.begin(115200);
     Wire.begin();  // TODO : check for power optimisations by turning off maybe
@@ -52,6 +55,11 @@ void setup() {
     } else {
         Serial.println("RTC time is not valid, setting it to compile time.");
         rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+    }
+
+    // Initialize task handles to NULL
+    for (int i = 0; i < NUM_TASKS; i++) {
+        tasksHandles[i] = NULL;
     }
 
     if (dataStorage.begin()) {
@@ -137,29 +145,29 @@ void setup() {
 
     // Run the sensor task on core 1 so it can't starve the core-0 Idle/Watchdog
     loadcell_task_parameters_t loadCellParams{&loadCell, &dataStorage, &rtc};
-    xTaskCreatePinnedToCore(TaskLoadCell, "TaskLoadCell", 10000, &loadCellParams, 1, NULL, 1);
-    xTaskCreatePinnedToCore(TaskBatteryManager, "TaskBatteryManager", 10000, &batteryManager, 1, NULL, 1);
+    xTaskCreatePinnedToCore(TaskLoadCell, "TaskLoadCell", 10000, &loadCellParams, 1, &tasksHandles[0], 1);
+    xTaskCreatePinnedToCore(TaskBatteryManager, "TaskBatteryManager", 10000, &batteryManager, 1, &tasksHandles[1], 1);
     hmi_task_parameters_t hmiParams{&hmiManager};
-    xTaskCreatePinnedToCore(TaskHMIManager, "TaskHMIManager", 10000, &hmiParams, 1, NULL, 1);
-    xTaskCreatePinnedToCore(TaskBlinkLEDs, "TaskBlinkLEDs", 10000, &hmiParams, 1, NULL, 1);
+    xTaskCreatePinnedToCore(TaskHMIManager, "TaskHMIManager", 10000, &hmiParams, 1, &tasksHandles[2], 1);
+    xTaskCreatePinnedToCore(TaskBlinkLEDs, "TaskBlinkLEDs", 10000, &hmiParams, 1, &tasksHandles[3], 1);
 
     // Run WiFi and BLE tasks on core 0, since drivers already run there anyways.
     if (currentState == STATE::WIFI) {
         Serial.println("Running in WIFI mode.");
         wifiManager = new WiFiManager(&rtc, deviceID);
         wifiManager->begin(WIFI_SSID, WIFI_PASS, opmode::NORMAL);  // Defined in environment.ini
-        xTaskCreatePinnedToCore(TaskWiFiManager, "TaskWiFiManager", 10000, wifiManager, 1, NULL, 0);
+        xTaskCreatePinnedToCore(TaskWiFiManager, "TaskWiFiManager", 10000, wifiManager, 1, &tasksHandles[4], 0);
     } else if (currentState == STATE::SETUP) {
         Serial.println("Running in SETUP mode. Starting WiFi AP for configuration.");
         wifiManager = new WiFiManager(&rtc, deviceID);
         wifiManager->begin(NULL, NULL, opmode::CONFIGURATION);
-        xTaskCreatePinnedToCore(TaskWiFiManager, "TaskWiFiManager", 10000, wifiManager, 1, NULL, 0);
+        xTaskCreatePinnedToCore(TaskWiFiManager, "TaskWiFiManager", 10000, wifiManager, 1, &tasksHandles[4], 0);
     } else if (currentState == STATE::BLE) {
         Serial.println("Running in BLE mode.");
         bleManager = new BLEManager("Hydroholic");
         // Create a structure to hold the parameters for the BLE task, since we can only pass a single void* parameter to the task function
         ble_task_parameters_t bleParams{bleManager, &dataStorage, &loadCell, &batteryManager};
-        xTaskCreatePinnedToCore(TaskBLEManager, "TaskBLEManager", 10000, &bleParams, 1, NULL, 0);
+        xTaskCreatePinnedToCore(TaskBLEManager, "TaskBLEManager", 10000, &bleParams, 1, &tasksHandles[4], 0);
     }
 }
 
@@ -169,15 +177,25 @@ void loop() {
     // TODO : clear storage and safely reset the microcontroller
     // Start blinking LEDs to confirm the button press has been registered and a reset request is being processed while waiting for the reset duration to be reached in the TaskHMIManager
     if (hmiManager.getResetRequest()) {
-        hmiManager.setResetRequest(false); // Clear the reset request flag to avoid re-entering this block
+        // Suspend other tasks to ensure the reset process is not interrupted
+        for (int i = 0; i < NUM_TASKS; i++) {
+            if (tasksHandles[i] != NULL) {
+                vTaskSuspend(tasksHandles[i]);
+            }
+        }
         Serial.println("Reset requested...");
-        hmiManager.setBlinkDuration(200); // Set a faster blink duration to indicate reset is being processed
+        hmiManager.setResetRequest(false); // Clear the reset request flag to avoid re-entering this block
         hmiManager.startBlinkingLEDs();
+        for (int i = 0; i < 5; i++) { // Blink LEDs for 5 seconds to indicate reset request has been registered
+            hmiManager.animateLEDs(200); // Blink for 200 ms
+        }
+        delay(1000);
         dataStorage.clear(LOADCELL_DATA_FILE);
-        // dataStorage.clear(CONFIG_DATA_FILE);
-        vTaskDelay(5000 / portTICK_PERIOD_MS); // Wait for 5 seconds to allow the user to see the indication before restarting
         // ESP.restart();
         Serial.println("Restarting device...");
+        for (;;) {
+            delay(1000); // Infinite loop
+        }
     }
 
     if (currentState == STATE::BLE) {

@@ -24,6 +24,7 @@ void TaskHMIManager(void * pvParameters) {
                 buttonPressStartTime = 0; // Reset the timer to avoid multiple triggers
             } else if (elapsedTime >= HMI_RESET_HOLD_PRESS_DURATION / 2 && !hmiManager->isBlinkingLEDs()) { // Start blinking LEDs at one third of the required duration to give feedback to the user that they are on the way to triggering a reset if they keep holding the button
                 Serial.println("Reset button held for one third of required duration, starting LED indication...");
+                hmiManager->setNumRepetitions(10);
                 hmiManager->setBlinkDuration(500); // Set a slower blink duration to indicate the reset is being prepared but not yet triggered
                 hmiManager->startBlinkingLEDs();
             }
@@ -36,13 +37,21 @@ void TaskHMIManager(void * pvParameters) {
 void TaskBlinkLEDs(void * pvParameters) {
     hmi_task_parameters_t* params = (hmi_task_parameters_t*) pvParameters;
     HMIManager* hmiManager = params->hmiManager;
+    String taskName = String(pcTaskGetName(xTaskGetCurrentTaskHandle()));
+    unsigned long lastBlinkTime = 0;
     for (;;) {
-        if (hmiManager->isBlinkingLEDs()) {
+        for (unsigned int i = 0; i < hmiManager->getNumRepetitions() && hmiManager->isBlinkingLEDs(); i++) {
+            Serial.println(taskName + ": Blinking LEDs, repetition " + String(i+1) + " of " + String(hmiManager->getNumRepetitions()));
+            lastBlinkTime = millis();
             hmiManager->animateLEDs(hmiManager->getBlinkDuration());
-        } else {
-            hmiManager->turnOffLEDs(); // Ensure LEDs are turned off when not blinking to avoid unintended states
-            vTaskDelay(500 / portTICK_PERIOD_MS); // Delay to reduce CPU usage when not blinking
+            vTaskDelay(50 / portTICK_PERIOD_MS); // Delay between animations
         }
+        if (lastBlinkTime != 0) {
+            Serial.println(taskName + ": Completed LED blinking pattern, resetting repetitions and stopping blinking...");
+            lastBlinkTime = 0;
+        }
+        hmiManager->setNumRepetitions(0); // Reset repetitions after completing the pattern to avoid unintended repeats
+        hmiManager->stopBlinkingLEDs(); // Stop blinking after completing the pattern to avoid unintended continuous blinking
         vTaskDelay(250 / portTICK_PERIOD_MS); // Delay between animations
     }
 }
@@ -92,30 +101,24 @@ bool HMIManager::getResetRequest() const {
 
 // soundBuzzer must be called before animateLEDs in the patterns to avoid blocking the buzzer with the LED animation delays, since the buzzer uses a non-blocking tone function that allows it to play asynchronously while the LEDs are blocking with delays for animation.
 void HMIManager::remindUser() {
-    for (int i = 0; i < REMINDER_REPETITIONS; i++) {
-        soundBuzzer(100, 800); // 100 ms duration, 800 Hz frequency
-        setBlinkDuration(2000);
-        startBlinkingLEDs();
-        vTaskDelay(2000 / portTICK_PERIOD_MS); // Wait for the duration of the reminder pattern before repeating
-        stopBlinkingLEDs();
-    }
+    // soundBuzzer(100, 800); // 100 ms duration, 800 Hz frequency
+    setNumRepetitions(REMINDER_REPETITIONS);
+    setBlinkDuration(2000);
+    startBlinkingLEDs();
 }
 
 void HMIManager::indicateError() {
-    for (int i = 0; i < ERROR_REPETITIONS; i++) {
-        soundBuzzer(100, 1600); // 100 ms duration, 1600 Hz frequency
-        setBlinkDuration(333);
-        startBlinkingLEDs();
-        vTaskDelay(333 / portTICK_PERIOD_MS); // Wait for the duration of the error pattern before repeating
-        stopBlinkingLEDs();
-    }
+    // soundBuzzer(100, 1600); // 100 ms duration, 1600 Hz frequency
+    setBlinkDuration(333);
+    setNumRepetitions(ERROR_REPETITIONS);
+    startBlinkingLEDs();
 }
 
 void HMIManager::indicateSuccess() {
-    for (int i = 0; i < SUCCESS_REPETITIONS; i++) {
-        soundBuzzer(100, 800); // 100 ms duration, 800 Hz frequency
-        animateLEDs(500); // 0.5 seconds duration for success pattern
-    }
+    // soundBuzzer(100, 800); // 100 ms duration, 800 Hz frequency
+    setNumRepetitions(SUCCESS_REPETITIONS);
+    setBlinkDuration(500);
+    startBlinkingLEDs();
 }
 
 void HMIManager::animateLEDs(unsigned int duration) {
@@ -144,6 +147,7 @@ void HMIManager::animateLEDs(unsigned int duration) {
         analogWrite(ledsPin, brightness);
         delayMicroseconds(delayTime);
     }
+    turnOffLEDs(); // Ensure LEDs are turned off at the end of the animation to avoid unintended states
 }
 
 void HMIManager::soundBuzzer(unsigned int duration, unsigned int frequency) {
@@ -204,15 +208,30 @@ unsigned int HMIManager::getBlinkDuration() const {
     return 0;
 }
 
-void HMIManager::turnOffLEDs() {
+void HMIManager::setNumRepetitions(unsigned int repetitions) {
     if (hmiSemaphore != NULL) {
         xSemaphoreTake(hmiSemaphore, portMAX_DELAY);
-        blinkLEDs = false; // Stop any ongoing blinking pattern
+        numRepetitions = repetitions;
         xSemaphoreGive(hmiSemaphore);
-        analogWrite(ledsPin, 0); // Turn off LEDs
     } else {
-        Serial.println("Warning: hmiSemaphore is not initialized, cannot turn off LEDs.");
+        Serial.println("Warning: hmiSemaphore is not initialized, cannot set number of repetitions.");
     }
+}
+
+unsigned int HMIManager::getNumRepetitions() const {
+    if (hmiSemaphore != NULL) {
+        xSemaphoreTake(hmiSemaphore, portMAX_DELAY);
+        unsigned int repetitions = numRepetitions;
+        xSemaphoreGive(hmiSemaphore);
+        return repetitions;
+    } else {
+        Serial.println("Warning: hmiSemaphore is not initialized, cannot get number of repetitions.");
+    }
+    return 0;
+}
+
+void HMIManager::turnOffLEDs() {
+    analogWrite(ledsPin, 0); // Turn off LEDs
 }
 
 void HMIManager::turnOffBuzzer() {
