@@ -39,7 +39,7 @@ void WiFiManager::begin(const char* ssid, const char* password, opmode mode) {
             // TODO : for now we'll be using the macAddress as device ID, but ideally it'd be server issued
         }
         // Register the device with the server using the device ID, so it can be identified when sending data
-        if (sendData("/device/register", "{\"deviceID\":\"" + _deviceID + "\"}", "application/json")) {
+        if (sendData("/device/register", "{\"deviceID\":\"" + _deviceID + "\", \"connectionCode\":\"" + String(orgCode) + "\"}", "application/json")) {
             Serial.println("Device registered successfully.");
         } else {
             Serial.println("Error registering device.");

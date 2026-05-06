@@ -38,6 +38,8 @@ class WiFiManager {
         bool syncNTP();  // Synchronize time with NTP server
         String getCurrentTime() const { return rtc->now().timestamp(); } // Get current time from RTC as a string
         void setAPIURL(const String& url);
+        void setOrgCode(const String& code) { orgCode = strdup(code.c_str()); }
+        String getAPIURL() const { return apiURL; }
         String getDeviceID() const { return _deviceID; }
 
     private:
@@ -46,5 +48,6 @@ class WiFiManager {
         char* _password;
         String _deviceID;
         String apiURL = API_URL; // Defined in environment.ini
+        char* orgCode;
         RTC_DS1307* rtc;
 };

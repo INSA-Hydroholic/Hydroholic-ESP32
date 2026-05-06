@@ -10,6 +10,7 @@
 #include <Wire.h>  // For I2C connections
 #include <time.h>
 #include "webpage.h"
+#include "urlDecode.h"
 
 #define HX711_DOUT_PIN      17
 #define HX711_SCK_PIN       16
@@ -17,6 +18,8 @@
 #define BATTERY_ADC_PIN     34
 #define BUZZER_PIN          23
 #define RST_BUTTON_PIN      18
+
+#define CONFIG_FILE "/config.csv"
 
 BLEManager* bleManager;
 WiFiManager* wifiManager;
@@ -33,15 +36,21 @@ static unsigned long lastGetReminderTime = 0;
 static unsigned long lastSaveDataTime = 0;
 
 enum STATE {
-    SETUP = 0,
-    WIFI,
-    BLE
+    WIFI = 0,
+    BLE,
+    SETUP
 };
 
 STATE currentState = SETUP; // Start in WiFi for debugging, MUST be changed to SETUP for production to allow initial configuration
 
 #define NUM_TASKS 5
 TaskHandle_t tasksHandles[NUM_TASKS]; // Array to hold task handles for cleanup and suspending when switching states
+
+// Config buffers with proper allocation
+char confSSID[256];
+char confPassword[256];
+char confApiURL[256];
+char confOrgCode[16];
 
 void setup() {
     Serial.begin(115200);
@@ -71,28 +80,6 @@ void setup() {
         // TODO : verify if it should continue or halt here
     }
 
-    // Ensure required files exist before starting tasks to avoid creation races
-    if (isStorageReady) {
-        if (!LittleFS.exists("/data.csv")) {
-            File fd = LittleFS.open("/data.csv", "a");
-            if (fd) fd.close();
-        }
-        if (!LittleFS.exists("/temp.csv")) {
-            File ft = LittleFS.open("/temp.csv", "a");
-            if (ft) ft.close();
-        }
-        if (!LittleFS.exists("/config.csv")) {  // Create an empty config file if it doesn't exist
-            File fs = LittleFS.open("/config.csv", "a");
-            // Set default calibration factor in config.csv if it doesn't exist
-            if (fs) {
-                fs.println("CALIB_FACTOR:1000.0");
-                fs.close();
-            } else {
-                Serial.println("ERROR : Failed to create config.csv");
-            }
-        }
-    }
-
     pinMode(2, OUTPUT); // Builtin LED for status indication
     loadCell.begin();
     batteryManager.begin();
@@ -110,35 +97,52 @@ void setup() {
     // Search for existing configuration in config.csv
     File configFile = LittleFS.open("/config.csv", "r");
     if (configFile) {
-        String line = configFile.readStringUntil('\n');
-        configFile.close();
-        if (line.startsWith("CALIB_FACTOR:")) {     // CALIBRATION FACTOR
-            String factorStr = line.substring(line.indexOf(':') + 1);
-            float factor = factorStr.toFloat();
-            if (factor > 0) {
-                loadCell.setCalibrationFactor(factor);
-                Serial.print("Calibration factor loaded from config: ");
-                Serial.println(factor, 6);
-            } else {
-                Serial.println("Invalid calibration factor in config.csv, using default.");
+        // Iterate through lines to retrieve configuration values
+        while (configFile.available()) {
+            String line = configFile.readStringUntil('\n');
+            String key = line.substring(0, line.indexOf(':'));
+            String value = line.substring(line.indexOf(':') + 1);
+            Serial.println("Config line - Key: " + key + ", Value: " + value);
+            if (key == "STATE") {
+                if (value.startsWith("wifi")) {
+                    currentState = WIFI;
+                } else if (value.startsWith("ble")) {
+                    currentState = BLE;
+                } else {
+                    currentState = SETUP;
+                }
+                Serial.print("Operation mode loaded from config: ");
+                Serial.println(currentState);
+            } else if (key == "CALIB_FACTOR") {
+                float factor = value.toFloat();
+                if (factor > 0) {
+                    loadCell.setCalibrationFactor(factor);
+                    Serial.print("Calibration factor loaded from config: ");
+                    Serial.println(factor, 6);
+                } else {
+                    Serial.println("Invalid calibration factor in config.csv, using default.");
+                }
+            } else if (key == "SSID") {
+                strncpy(confSSID, value.c_str(), sizeof(confSSID) - 1);
+                confSSID[sizeof(confSSID) - 1] = '\0';
+                Serial.print("SSID loaded from config: ");
+                Serial.println(confSSID);
+            } else if (key == "PASSWORD") {
+                strncpy(confPassword, value.c_str(), sizeof(confPassword) - 1);
+                confPassword[sizeof(confPassword) - 1] = '\0';
+                Serial.print("Password loaded from config: ");
+                Serial.println(confPassword);
+            } else if (key == "API_URL") {
+                strncpy(confApiURL, value.c_str(), sizeof(confApiURL) - 1);
+                confApiURL[sizeof(confApiURL) - 1] = '\0';
+                Serial.print("API URL loaded from config: ");
+                Serial.println(confApiURL);
+            } else if (key == "ORG_CODE") {
+                strncpy(confOrgCode, value.c_str(), sizeof(confOrgCode) - 1);
+                confOrgCode[sizeof(confOrgCode) - 1] = '\0';
+                Serial.print("Organization Code loaded from config: ");
+                Serial.println(confOrgCode);
             }
-        } else if (line.startsWith("DEV_ID:")) {     // DEVICE ID
-            deviceID = line.substring(line.indexOf(':') + 1);
-            Serial.print("Device ID loaded from config: ");
-            Serial.println(deviceID);
-        } else if (line.startsWith("STATE:")) {     // OPERATION MODE
-            String stateStr = line.substring(line.indexOf(':') + 1);
-            if (stateStr == "WIFI") {
-                currentState = WIFI;
-            } else if (stateStr == "BLE") {
-                currentState = BLE;
-            } else {
-                currentState = SETUP;
-            }
-            Serial.print("Operation mode loaded from config: ");
-            Serial.println(currentState);
-        } else {
-            Serial.println("No valid configuration found in config.csv, using defaults.");
         }
     } else {
         Serial.println("Could not open config.csv for reading.");
@@ -156,7 +160,9 @@ void setup() {
     if (currentState == STATE::WIFI) {
         Serial.println("Running in WIFI mode.");
         wifiManager = new WiFiManager(&rtc, deviceID);
-        wifiManager->begin(WIFI_SSID, WIFI_PASS, opmode::NORMAL);  // Defined in environment.ini
+        wifiManager->begin(confSSID, confPassword, opmode::NORMAL);  // Defined in environment.ini
+        wifiManager->setAPIURL(confApiURL);
+        wifiManager->setOrgCode(confOrgCode);
         xTaskCreatePinnedToCore(TaskWiFiManager, "TaskWiFiManager", 10000, wifiManager, 1, &tasksHandles[4], 0);
     } else if (currentState == STATE::SETUP) {
         Serial.println("Running in SETUP mode. Starting WiFi AP for configuration.");
@@ -242,15 +248,54 @@ void loop() {
                         client.println(index_html); 
                         
                     } else if (request.indexOf("POST /save") >= 0) {
-                        
-                        // (You will need additional logic here to read the POST body and parse the parameters)
-                        
+                        // Read the POST data from the client (the new configuration)
+                        String postData = "";
+                        while (client.available()) {
+                            postData += client.readStringUntil('\n');
+                        }
+                        Serial.println("Received POST data: " + postData);
+                        String opMode = urlDecode(postData.substring(postData.indexOf("mode=") + 5, postData.indexOf("&ssid=")));
+                        String ssid = urlDecode(postData.substring(postData.indexOf("ssid=") + 5, postData.indexOf("&password=")));
+                        String password = urlDecode(postData.substring(postData.indexOf("password=") + 9, postData.indexOf("&org_code=")));
+                        String organizationCode = urlDecode(postData.substring(postData.indexOf("org_code=") + 9, postData.indexOf("org_code=") + 15));  // 6 digits code
+                        int apiURLStartIndex = postData.indexOf("api_url=") + 8;
+                        String apiURL = urlDecode(postData.substring(apiURLStartIndex, postData.indexOf("&", apiURLStartIndex)));
+
+                        Serial.println("Parsed config - Mode: " + opMode + ", SSID: " + ssid + ", Password: " + password + ", API URL: " + apiURL + ", Org Code: " + organizationCode);
+
+                        // Validate input data
+                        if ((opMode != "wifi" && opMode != "ble") || ssid.length() == 0 || organizationCode.length() != 6) {
+                            Serial.println("Invalid configuration data received.");
+                            client.println("HTTP/1.1 400 Bad Request");
+                            client.println("Connection: close");
+                            client.println();
+                            client.println("Invalid configuration data. Please check your input and try again.");
+                            client.stop();
+                            return;
+                        }
+
+                        // Save the configuration to config.csv in the format "KEY:VALUE"
+                        dataStorage.clear(CONFIG_FILE); // Clear existing config
+
+                        File configFile = LittleFS.open(CONFIG_FILE, "w");
+                        if (configFile) {
+                            configFile.println("STATE:" + opMode);
+                            configFile.println("SSID:" + ssid);
+                            configFile.println("PASSWORD:" + password);
+                            configFile.println("API_URL:" + apiURL);
+                            configFile.println("ORG_CODE:" + organizationCode);
+                            configFile.close();
+                            Serial.println("Configuration saved to " CONFIG_FILE);
+                        } else {
+                            Serial.println("Failed to open " CONFIG_FILE " for writing.");
+                        }
+
                         client.println("HTTP/1.1 200 OK");
                         client.println("Content-type: text/plain");
                         client.println("Connection: close");
                         client.println();
                         client.println("Settings saved. Hydrobase is rebooting...");
-                        
+                        ESP.restart();
                     } else {  // Handle unknown endpoints with a 404 response
                         client.println("HTTP/1.1 404 Not Found");
                         client.println("Connection: close");

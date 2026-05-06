@@ -2,11 +2,11 @@
 
 const char* index_html = R"rawliteral(
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hydroholic Setup</title>
+    <title>Configuration Hydroholic</title>
     <style>
         /* Modern Dark Theme */
         :root {
@@ -166,14 +166,14 @@ const char* index_html = R"rawliteral(
 
     <div class="container">
         <h1>Hydroholic</h1>
-        <div class="subtitle">Hydrobase Configuration</div>
+        <div class="subtitle">Configuration d'Hydrobase</div>
 
         <form action="/save" method="POST">
             
             <!-- Mode Selection -->
             <div class="mode-selector">
                 <input type="radio" id="mode-wifi" name="mode" value="wifi" checked>
-                <label for="mode-wifi">WiFi</label>
+                <label for="mode-wifi">Wi-Fi</label>
 
                 <input type="radio" id="mode-ble" name="mode" value="ble">
                 <label for="mode-ble">Bluetooth (BLE)</label>
@@ -182,32 +182,36 @@ const char* index_html = R"rawliteral(
             <!-- WiFi Configuration Form -->
             <div id="section-wifi" class="form-section active">
                 <div class="form-group">
-                    <label for="ssid">WiFi Network (SSID)</label>
-                    <input type="text" id="ssid" name="ssid" placeholder="Enter network name" required>
+                    <label for="ssid">Réseau Wi-Fi (SSID)</label>
+                    <input type="text" id="ssid" name="ssid" placeholder="Entrez le nom du réseau" required>
                 </div>
                 
                 <div class="form-group">
-                    <label for="password">WiFi Password</label>
-                    <input type="password" id="password" name="password" placeholder="Enter password">
+                    <label for="password">Mot de passe Wi-Fi</label>
+                    <input type="password" id="password" name="password" placeholder="Entrez le mot de passe">
                 </div>
 
                 <div class="form-group">
-                    <label for="api_url">API URL (Optional)</label>
+                    <label for="org_code">Code d'organisation</label>
+                    <input type="text" id="org_code" name="org_code" placeholder="Code à 6 chiffres" pattern="\d{6}" maxlength="6" title="Veuillez entrer exactement 6 chiffres" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="api_url">URL de l'API (Optionnel)</label>
                     <input type="text" id="api_url" name="api_url" value="agir.minettoar.org/api">
-                    <span class="help-text">Leave as default unless using a custom backend.</span>
+                    <span class="help-text">Laissez par défaut sauf si vous utilisez un backend personnalisé.</span>
                 </div>
             </div>
 
             <!-- BLE Configuration Form -->
             <div id="section-ble" class="form-section">
                 <div class="ble-status">
-                    <p>BLE Mode Selected</p>
-                    <span class="help-text">The device will broadcast as "Hydrobase_BLE" awaiting client connection.</span>
+                    <p>Mode BLE sélectionné</p>
+                    <span class="help-text">L'appareil diffusera sous le nom "Hydrobase_BLE" en attente d'une connexion client.</span>
                 </div>
-                <!-- Add any specific BLE settings here if needed in the future -->
             </div>
 
-            <button type="submit">Save & Reboot</button>
+            <button type="submit">Sauvegarder et Redémarrer</button>
         </form>
     </div>
 
@@ -217,17 +221,22 @@ const char* index_html = R"rawliteral(
         const radioBle = document.getElementById('mode-ble');
         const sectionWifi = document.getElementById('section-wifi');
         const sectionBle = document.getElementById('section-ble');
-        const wifiInput = document.getElementById('ssid'); // Used to toggle the required attribute
+        
+        // Inputs to toggle required attribute
+        const wifiInput = document.getElementById('ssid'); 
+        const orgCodeInput = document.getElementById('org_code');
 
         function toggleSections() {
             if (radioWifi.checked) {
                 sectionWifi.classList.add('active');
                 sectionBle.classList.remove('active');
                 wifiInput.setAttribute('required', 'true');
+                orgCodeInput.setAttribute('required', 'true');
             } else {
                 sectionWifi.classList.remove('active');
                 sectionBle.classList.add('active');
                 wifiInput.removeAttribute('required');
+                orgCodeInput.removeAttribute('required');
             }
         }
 
