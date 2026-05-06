@@ -11,7 +11,7 @@ void TaskLoadCell(void * pvParameters) {
             loadCell->measureWeight();
         }
 
-        if (millis() - lastSaveTime >= LOADCELL_SAVE_DATA_INTERVAL) {
+        if (millis() - lastSaveTime >= LOADCELL_SAVE_DATA_INTERVAL && loadCell->isStableWeight()) {
             lastSaveTime = millis();
             float weight = loadCell->getWeight();
             DateTime now = rtc->now();

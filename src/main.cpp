@@ -190,27 +190,26 @@ void loop() {
         if (currentTime - lastGetReminderTime >= GET_REMINDER_INTERVAL) {
             lastGetReminderTime = currentTime;
             Serial.println("Checking if user needs to be reminded...");
-            // String response = "";
-            // String &responseRef = response; // Need a non-const reference to pass to the getData function
-            // if(wifiManager->getData("/device/:ID/user?"+wifiManager->getDeviceID(), responseRef, "text/plain")) {
-            //     Serial.println("Received associated user ID from server: " + response);
-            //     if (response != "-1") {
-            //         String userID = response; // Store user ID for future use if needed
-            //         response = ""; // Clear response string to reuse it for the next request
-            //         String &responseRef = response; // Update reference to the cleared response string
-            //         if (wifiManager->getData("/device/:ID/reminder?"+wifiManager->getDeviceID(), responseRef, "text/plain")) {
-            //             Serial.println("Received reminder response from server: " + response);
-            //             if (response == "1") {
-            //                 hmiManager.remindUser();
-            //             }
-            //         } else {
-            //             Serial.println("Error checking reminder status from server.");
-            //         }
-            //     }
-            // } else {
-            //     Serial.println("Error checking reminder status from server.");
-            // }
-            hmiManager.remindUser();
+            String response = "";
+            String &responseRef = response; // Need a non-const reference to pass to the getData function
+            if(wifiManager->getData("/device/:ID/user?"+wifiManager->getDeviceID(), responseRef, "text/plain")) {
+                Serial.println("Received associated user ID from server: " + response);
+                if (response != "-1") {
+                    String userID = response; // Store user ID for future use if needed
+                    response = ""; // Clear response string to reuse it for the next request
+                    String &responseRef = response; // Update reference to the cleared response string
+                    if (wifiManager->getData("/users/"+userID+"/alerts?evaluated_time=1", responseRef, "text/plain")) {
+                        Serial.println("Received reminder response from server: " + response);
+                        if (response.substring(14, 18) == "true") { // If the server indicates the user needs to be reminded, trigger the reminder pattern on the device
+                            hmiManager.remindUser();
+                        }
+                    } else {
+                        Serial.println("Error checking reminder status from server.");
+                    }
+                }
+            } else {
+                Serial.println("Error checking reminder status from server.");
+            }
         }
         // Send data to the server every UPDATE_LOGS_INTERVAL seconds
         if (currentTime - lastUpdateServerTime >= UPDATE_LOGS_INTERVAL) {
