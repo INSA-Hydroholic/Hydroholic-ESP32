@@ -1,6 +1,6 @@
 #pragma once
 
-const char* index_html = R"rawliteral(
+const char index_html[] = R"rawliteral(
 <!DOCTYPE html>
 <html lang="fr">
 <head>

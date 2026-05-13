@@ -36,15 +36,15 @@ static unsigned long lastGetReminderTime = 0;
 static unsigned long lastSaveDataTime = 0;
 
 enum STATE {
-    WIFI = 0,
-    BLE,
-    SETUP
+    WIFI = 0,	// WiFi mode for sending data to a server
+    BLE,		// BLE mode for communicating with the mobile app
+    SETUP 		// Setup mode with WiFi AP for configuring the device (WiFi credentials, API URL, Org Code, etc)   
 };
 
-STATE currentState = SETUP; // Start in WiFi for debugging, MUST be changed to SETUP for production to allow initial configuration
+STATE currentState = SETUP;
 
 #define NUM_TASKS 5
-TaskHandle_t tasksHandles[NUM_TASKS]; // Array to hold task handles for cleanup and suspending when switching states
+TaskHandle_t tasksHandles[NUM_TASKS];	// Array to hold task handles for cleanup and suspending when switching states
 
 // Config buffers with proper allocation
 char confSSID[256] = WIFI_SSID;
@@ -54,12 +54,12 @@ char confOrgCode[16] = "";
 
 void setup() {
     Serial.begin(115200);
-    Wire.begin();  // TODO : check for power optimisations by turning off maybe
+    Wire.begin(); 	// TODO : check for power optimisations by turning off maybe
     if (!rtc.begin()) {
         Serial.println("ERROR : Couldn't communicate with the RTC DS1307");
     }
 
-    // Retrieve rtc time, if it's later than the compile time, it means the rtc has a valid time (either from previous sync or from battery backup) and we can use it. Otherwise, we set it to the compile time as a fallback
+    // Retrieve RTC time, if it's later than the compile time, it means the RTC has a valid time (either from previous sync or from battery backup) and we can use it. Otherwise, we set it to the compile time as a fallback
     if (rtc.now().unixtime() > DateTime(F(__DATE__),F(__TIME__)).unixtime()) {
         Serial.println("RTC time is valid, using it.");
     } else {
@@ -95,13 +95,18 @@ void setup() {
 
     String deviceID = "0";
     // Search for existing configuration in config.csv
-    File configFile = LittleFS.open("/config.csv", "r");
+    File configFile = LittleFS.open(CONFIG_FILE, "r");
     if (configFile) {
         // Iterate through lines to retrieve configuration values
         while (configFile.available()) {
             String line = configFile.readStringUntil('\n');
-            String key = line.substring(0, line.indexOf(':'));
-            String value = line.substring(line.indexOf(':') + 1);
+			int colonIndex = line.indexOf(':');
+			if (colonIndex == -1) {
+				Serial.println("WARNING : Invalid config line (no colon found), skipping: " + line);
+				continue;
+			}
+            String key = line.substring(0, colonIndex);
+            String value = line.substring(colonIndex + 1);
             value.trim(); // Remove any trailing newline or whitespace characters
             Serial.println("Config line - Key: " + key + ", Value: " + value);
             if (key == "STATE") {
@@ -131,8 +136,7 @@ void setup() {
             } else if (key == "PASSWORD") {
                 strncpy(confPassword, value.c_str(), sizeof(confPassword) - 1);
                 confPassword[sizeof(confPassword) - 1] = '\0';
-                Serial.print("Password loaded from config: ");
-                Serial.println(confPassword);
+                Serial.print("Password loaded from config.");
             } else if (key == "API_URL") {
                 strncpy(confApiURL, value.c_str(), sizeof(confApiURL) - 1);
                 confApiURL[sizeof(confApiURL) - 1] = '\0';
@@ -145,6 +149,7 @@ void setup() {
                 Serial.println(confOrgCode);
             }
         }
+		configFile.close();
     } else {
         Serial.println("Could not open config.csv for reading.");
     }
@@ -264,7 +269,7 @@ void loop() {
                         int apiURLStartIndex = postData.indexOf("api_url=") + 8;
                         String apiURL = urlDecode(postData.substring(apiURLStartIndex, postData.indexOf("&", apiURLStartIndex)));
 
-                        Serial.println("Parsed config - Mode: " + opMode + ", SSID: " + ssid + ", Password: " + password + ", API URL: " + apiURL + ", Org Code: " + organizationCode);
+                        Serial.println("Parsed config - Mode: " + opMode + ", SSID: " + ssid + ", Password: <REDACTED>" + ", API URL: " + apiURL + ", Org Code: " + organizationCode);
 
                         // Validate input data
                         if ((opMode != "wifi" && opMode != "ble") || ssid.length() == 0 || organizationCode.length() != 6) {
@@ -277,10 +282,10 @@ void loop() {
                             return;
                         }
 
-                        // Save the configuration to config.csv in the format "KEY:VALUE"
-                        dataStorage.clear(CONFIG_FILE); // Clear existing config
+                        // Save the configuration to CONFIG_FILE in the format "KEY:VALUE"
+                        dataStorage.clear(CONFIG_FILE);	// Clear existing config
 
-                        // Check for https:// prefix in API URL and add it if missing to ensure consistency in the stored config and avoid issues when using the URL later
+                        // Check for 'https://' prefix in API URL to ensure consistency in the stored config and avoid issues when using the URL later
                         if (!apiURL.startsWith("http://") && !apiURL.startsWith("https://")) {
                             apiURL = "http://" + apiURL;
                         }
@@ -304,7 +309,7 @@ void loop() {
                         client.println();
                         client.println("Settings saved. Hydrobase is rebooting...");
                         ESP.restart();
-                    } else {  // Handle unknown endpoints with a 404 response
+                    } else {	// Handle unknown endpoints with a 404 response
                         client.println("HTTP/1.1 404 Not Found");
                         client.println("Connection: close");
                         client.println();
@@ -313,11 +318,11 @@ void loop() {
                 
                 // Give the web browser time to receive the data
                 delay(10);
-                
-                // 5. Close the connection
+            
                 client.stop();
                 Serial.println("Client disconnected.");
             }
+			vTaskDelay(10 / portTICK_PERIOD_MS); // Short delay to prevent watchdog timer reset while waiting for clients in the main loop
         }
     } else if (currentState == STATE::BLE) {
         // The BLEManager task handles everything, so we just run an infinite loop
