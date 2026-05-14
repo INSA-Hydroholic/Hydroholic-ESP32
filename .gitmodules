@@ -1,0 +1,3 @@
+[submodule "Hydroholic-ESP32.wiki"]
+	path = Hydroholic-ESP32.wiki
+	url = https://github.com/INSA-Hydroholic/Hydroholic-ESP32.wiki.git
