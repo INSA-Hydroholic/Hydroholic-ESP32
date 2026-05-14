@@ -2,7 +2,7 @@
 
 #include <Arduino.h>
 
-String urlDecode(const String& encoded) {
+inline String urlDecode(const String& encoded) {
     String decoded = "";
     char temp[] = "0x00"; // Temporary variable to hold the hex value
 

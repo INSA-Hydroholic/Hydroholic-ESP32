@@ -20,7 +20,7 @@ void WiFiManager::begin(const char* ssid, const char* password, opmode mode) {
     setMode(mode);
     if (mode == opmode::CONFIGURATION) {
         WiFi.mode(WIFI_AP);
-        WiFi.softAP(AP_MODE_SSID, AP_MODE_PASS, 1, false, 1); // Open AP with channel 1 and max connections of 1 to avoid interference
+        WiFi.softAP(AP_MODE_SSID, AP_MODE_PASS, 13, false, 3); // Password-protected AP with channel 13 and max connections of 3 to avoid interference
         Serial.println("WiFi AP started with SSID: " + String(AP_MODE_SSID));
         return;
     } else {
@@ -163,7 +163,7 @@ bool WiFiManager::connect(const char* ssid, const char* password, bool retry) {
     }
 
     if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("\nFailed to connect to WiFi with SSID: " + String(ssid ? ssid : _ssid) + " and password: " + String(password ? password : "********"));
+        Serial.println("\nFailed to connect to WiFi with SSID: " + String(ssid ? ssid : _ssid) + " and password: <REDACTED>");
         return false;
     }
     if (retry) {
