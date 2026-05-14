@@ -29,7 +29,8 @@ jobs:
         uses: addnab/docker-run-action@v3
         with:
           image: rlespinasse/drawio-desktop-headless:latest
-          options: --rm -it -w /data -v ./Hydroholic-ESP32.wiki:/data -x -f svg .
+          options: --rm -it -v ${{ github.workspace }}/wiki:/data
+          run: drawio -x -f svg /data
       
       - name: Commit and push changes to the wiki
         run: |
