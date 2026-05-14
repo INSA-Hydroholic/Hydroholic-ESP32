@@ -27,6 +27,7 @@ struct Header {
 class WiFiManager {
     public:
         WiFiManager(RTC_DS1307* realTimeClock, String deviceID = "0");
+        ~WiFiManager();
         void begin(const char* ssid, const char* password, opmode mode = NORMAL);
         bool isConnected() const;
         bool getData(const String& endpoint, String& response, const String& contentType = "text/csv", const Header* headers = nullptr, uint8_t numHeaders = 0); // Returns true on success, false on failure
@@ -38,7 +39,7 @@ class WiFiManager {
         bool syncNTP();  // Synchronize time with NTP server
         String getCurrentTime() const { return rtc->now().timestamp(); } // Get current time from RTC as a string
         void setAPIURL(const String& url);
-        void setOrgCode(const String& code) { orgCode = strdup(code.c_str()); }
+        void setOrgCode(const String& code) { orgCode = code; }
         String getAPIURL() const { return apiURL; }
         String getDeviceID() const { return _deviceID; }
 
@@ -48,6 +49,6 @@ class WiFiManager {
         char* _password;
         String _deviceID;
         String apiURL = API_URL; // Defined in environment.ini
-        char* orgCode;
+        String orgCode;
         RTC_DS1307* rtc;
 };
