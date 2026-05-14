@@ -1,11 +1,13 @@
 name: GitHub Actions Update Wiki
 run-name: Updating Wiki on ${{ github.actor }}'s push to ${{ github.repository }}
-on: [push]
-  # push:
-    # branches:
-      # - main
-    # paths:
-      # - '**.md'
+on: 
+  gollum:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '**.drawio'
 jobs:
   update-wiki:
     runs-on: ubuntu-latest
