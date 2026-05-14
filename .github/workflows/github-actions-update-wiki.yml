@@ -9,6 +9,9 @@ on: [push]
 jobs:
   update-wiki:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
     steps:
       - run: echo "The job was triggered by a ${{ github.event_name }} event."
       - run: echo "Running on branch ${{ github.ref }} of ${{ github.repository }} repository."
