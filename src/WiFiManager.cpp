@@ -14,14 +14,18 @@ void TaskWiFiManager(void * pvParameters) {
     }
 }
 
-WiFiManager::WiFiManager(RTC_DS1307* realTimeClock, String deviceID) : rtc(realTimeClock), _deviceID(deviceID) {}
+WiFiManager::WiFiManager(RTC_DS1307* realTimeClock, String deviceID) : rtc(realTimeClock), _deviceID(deviceID), orgCode("") {}
+
+WiFiManager::~WiFiManager() {
+    
+}
 
 void WiFiManager::begin(const char* ssid, const char* password, opmode mode) {
     setMode(mode);
     if (mode == opmode::CONFIGURATION) {
         WiFi.mode(WIFI_AP);
-        WiFi.softAP(_apssid, NULL, 1, false, 1); // Open AP with channel 1 and max connections of 1 to avoid interference 
-        Serial.println("WiFi AP started with SSID: " + String(_apssid));
+        WiFi.softAP(AP_MODE_SSID, AP_MODE_PASS, 13, false, 3); // Password-protected AP with channel 13 and max connections of 3 to avoid interference
+        Serial.println("WiFi AP started with SSID: " + String(AP_MODE_SSID));
         return;
     } else {
         WiFi.mode(WIFI_STA);
@@ -39,7 +43,7 @@ void WiFiManager::begin(const char* ssid, const char* password, opmode mode) {
             // TODO : for now we'll be using the macAddress as device ID, but ideally it'd be server issued
         }
         // Register the device with the server using the device ID, so it can be identified when sending data
-        if (sendData("/device/register", "{\"deviceID\":\"" + _deviceID + "\"}", "application/json")) {
+        if (sendData("/device/register", "{\"deviceID\":\"" + _deviceID + "\", \"connectionCode\":\"" + orgCode + "\"}", "application/json")) {
             Serial.println("Device registered successfully.");
         } else {
             Serial.println("Error registering device.");
@@ -162,7 +166,7 @@ bool WiFiManager::connect(const char* ssid, const char* password, bool retry) {
     }
 
     if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("\nFailed to connect to WiFi");
+        Serial.println("\nFailed to connect to WiFi with SSID: " + String(ssid ? ssid : _ssid) + " and password: <REDACTED>");
         return false;
     }
     if (retry) {

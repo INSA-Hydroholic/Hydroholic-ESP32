@@ -9,6 +9,8 @@
 #include <RTCLib.h>
 #include <Wire.h>  // For I2C connections
 #include <time.h>
+#include "webpage.h"
+#include "urlDecode.h"
 
 #define HX711_DOUT_PIN      17
 #define HX711_SCK_PIN       16
@@ -16,6 +18,8 @@
 #define BATTERY_ADC_PIN     34
 #define BUZZER_PIN          23
 #define RST_BUTTON_PIN      18
+
+#define CONFIG_FILE "/config.csv"
 
 BLEManager* bleManager;
 WiFiManager* wifiManager;
@@ -32,24 +36,30 @@ static unsigned long lastGetReminderTime = 0;
 static unsigned long lastSaveDataTime = 0;
 
 enum STATE {
-    SETUP = 0,
-    WIFI,
-    BLE
+    WIFI = 0,	// WiFi mode for sending data to a server
+    BLE,		// BLE mode for communicating with the mobile app
+    SETUP 		// Setup mode with WiFi AP for configuring the device (WiFi credentials, API URL, Org Code, etc)   
 };
 
-STATE currentState = WIFI; // Start in WiFi for debugging, MUST be changed to SETUP for production to allow initial configuration
+STATE currentState = SETUP;
 
 #define NUM_TASKS 5
-TaskHandle_t tasksHandles[NUM_TASKS]; // Array to hold task handles for cleanup and suspending when switching states
+TaskHandle_t tasksHandles[NUM_TASKS];	// Array to hold task handles for cleanup and suspending when switching states
+
+// Config buffers with proper allocation
+char confSSID[256] = WIFI_SSID;
+char confPassword[256] = WIFI_PASS;
+char confApiURL[256] = API_URL;
+char confOrgCode[16] = "";
 
 void setup() {
     Serial.begin(115200);
-    Wire.begin();  // TODO : check for power optimisations by turning off maybe
+    Wire.begin(); 	// TODO : check for power optimisations by turning off maybe
     if (!rtc.begin()) {
         Serial.println("ERROR : Couldn't communicate with the RTC DS1307");
     }
 
-    // Retrieve rtc time, if it's later than the compile time, it means the rtc has a valid time (either from previous sync or from battery backup) and we can use it. Otherwise, we set it to the compile time as a fallback
+    // Retrieve RTC time, if it's later than the compile time, it means the RTC has a valid time (either from previous sync or from battery backup) and we can use it. Otherwise, we set it to the compile time as a fallback
     if (rtc.now().unixtime() > DateTime(F(__DATE__),F(__TIME__)).unixtime()) {
         Serial.println("RTC time is valid, using it.");
     } else {
@@ -70,28 +80,6 @@ void setup() {
         // TODO : verify if it should continue or halt here
     }
 
-    // Ensure required files exist before starting tasks to avoid creation races
-    if (isStorageReady) {
-        if (!LittleFS.exists("/data.csv")) {
-            File fd = LittleFS.open("/data.csv", "a");
-            if (fd) fd.close();
-        }
-        if (!LittleFS.exists("/temp.csv")) {
-            File ft = LittleFS.open("/temp.csv", "a");
-            if (ft) ft.close();
-        }
-        if (!LittleFS.exists("/config.csv")) {  // Create an empty config file if it doesn't exist
-            File fs = LittleFS.open("/config.csv", "a");
-            // Set default calibration factor in config.csv if it doesn't exist
-            if (fs) {
-                fs.println("CALIB_FACTOR:1000.0");
-                fs.close();
-            } else {
-                Serial.println("ERROR : Failed to create config.csv");
-            }
-        }
-    }
-
     pinMode(2, OUTPUT); // Builtin LED for status indication
     loadCell.begin();
     batteryManager.begin();
@@ -107,38 +95,61 @@ void setup() {
 
     String deviceID = "0";
     // Search for existing configuration in config.csv
-    File configFile = LittleFS.open("/config.csv", "r");
+    File configFile = LittleFS.open(CONFIG_FILE, "r");
     if (configFile) {
-        String line = configFile.readStringUntil('\n');
-        configFile.close();
-        if (line.startsWith("CALIB_FACTOR:")) {     // CALIBRATION FACTOR
-            String factorStr = line.substring(line.indexOf(':') + 1);
-            float factor = factorStr.toFloat();
-            if (factor > 0) {
-                loadCell.setCalibrationFactor(factor);
-                Serial.print("Calibration factor loaded from config: ");
-                Serial.println(factor, 6);
-            } else {
-                Serial.println("Invalid calibration factor in config.csv, using default.");
+        // Iterate through lines to retrieve configuration values
+        while (configFile.available()) {
+            String line = configFile.readStringUntil('\n');
+			int colonIndex = line.indexOf(':');
+			if (colonIndex == -1) {
+				Serial.println("WARNING : Invalid config line (no colon found), skipping: " + line);
+				continue;
+			}
+            String key = line.substring(0, colonIndex);
+            String value = line.substring(colonIndex + 1);
+            value.trim(); // Remove any trailing newline or whitespace characters
+            Serial.println("Config line - Key: " + key + ", Value: " + value);
+            if (key == "STATE") {
+                if (value.startsWith("wifi")) {
+                    currentState = WIFI;
+                } else if (value.startsWith("ble")) {
+                    currentState = BLE;
+                } else {
+                    currentState = SETUP;
+                }
+                Serial.print("Operation mode loaded from config: ");
+                Serial.println(currentState);
+            } else if (key == "CALIB_FACTOR") {
+                float factor = value.toFloat();
+                if (factor > 0) {
+                    loadCell.setCalibrationFactor(factor);
+                    Serial.print("Calibration factor loaded from config: ");
+                    Serial.println(factor, 6);
+                } else {
+                    Serial.println("Invalid calibration factor in config.csv, using default.");
+                }
+            } else if (key == "SSID") {
+                strncpy(confSSID, value.c_str(), sizeof(confSSID) - 1);
+                confSSID[sizeof(confSSID) - 1] = '\0';
+                Serial.print("SSID loaded from config: ");
+                Serial.println(confSSID);
+            } else if (key == "PASSWORD") {
+                strncpy(confPassword, value.c_str(), sizeof(confPassword) - 1);
+                confPassword[sizeof(confPassword) - 1] = '\0';
+                Serial.print("Password loaded from config.");
+            } else if (key == "API_URL") {
+                strncpy(confApiURL, value.c_str(), sizeof(confApiURL) - 1);
+                confApiURL[sizeof(confApiURL) - 1] = '\0';
+                Serial.print("API URL loaded from config: ");
+                Serial.println(confApiURL);
+            } else if (key == "ORG_CODE") {
+                strncpy(confOrgCode, value.c_str(), sizeof(confOrgCode) - 1);
+                confOrgCode[sizeof(confOrgCode) - 1] = '\0';
+                Serial.print("Organization Code loaded from config: ");
+                Serial.println(confOrgCode);
             }
-        } else if (line.startsWith("DEV_ID:")) {     // DEVICE ID
-            deviceID = line.substring(line.indexOf(':') + 1);
-            Serial.print("Device ID loaded from config: ");
-            Serial.println(deviceID);
-        } else if (line.startsWith("STATE:")) {     // OPERATION MODE
-            String stateStr = line.substring(line.indexOf(':') + 1);
-            if (stateStr == "WIFI") {
-                currentState = WIFI;
-            } else if (stateStr == "BLE") {
-                currentState = BLE;
-            } else {
-                currentState = SETUP;
-            }
-            Serial.print("Operation mode loaded from config: ");
-            Serial.println(currentState);
-        } else {
-            Serial.println("No valid configuration found in config.csv, using defaults.");
         }
+		configFile.close();
     } else {
         Serial.println("Could not open config.csv for reading.");
     }
@@ -155,7 +166,10 @@ void setup() {
     if (currentState == STATE::WIFI) {
         Serial.println("Running in WIFI mode.");
         wifiManager = new WiFiManager(&rtc, deviceID);
-        wifiManager->begin(WIFI_SSID, WIFI_PASS, opmode::NORMAL);  // Defined in environment.ini
+        // Set API URL and Org Code BEFORE calling begin(), as they are needed during registration
+        wifiManager->setAPIURL(confApiURL);
+        wifiManager->setOrgCode(confOrgCode);
+        wifiManager->begin(confSSID, confPassword, opmode::NORMAL);  // Defined in environment.ini
         xTaskCreatePinnedToCore(TaskWiFiManager, "TaskWiFiManager", 10000, wifiManager, 1, &tasksHandles[4], 0);
     } else if (currentState == STATE::SETUP) {
         Serial.println("Running in SETUP mode. Starting WiFi AP for configuration.");
@@ -192,14 +206,127 @@ void loop() {
             delay(200);
         }
         dataStorage.clear(LOADCELL_DATA_FILE);
+        dataStorage.clear(CONFIG_FILE);
         Serial.println("Restarting device...");
         ESP.restart();
     }
 
-    if (currentState == STATE::BLE) {
+    if (currentState == STATE::SETUP) {
+        // In setup mode, so here we suspend other tasks to ensure they don't interfere with the setup process and consume resources while the user is configuring the device through the WiFi AP. Once the user finishes the configuration and the device restarts
+        for (int i = 0; i < NUM_TASKS; i++) {
+            if (tasksHandles[i] != NULL) {
+                vTaskSuspend(tasksHandles[i]);
+            }
+        }
+        // Initialize Web server 
+        WiFiServer server(80);
+        server.begin();
+
+        for (;;) {
+            WiFiClient client = server.available();
+            if (client) {
+                Serial.println("Client connected");
+                while (client.connected() && !client.available()) {
+                    delay(10);
+                }
+
+                if (client.available()) {
+                    // The first line of the HTTP request contains the method and endpoint, e.g. "GET /setup HTTP/1.1"
+                    String request = client.readStringUntil('\r');
+                    Serial.println("Received request: " + request);
+                    client.readStringUntil('\n'); // Consume the trailing '\n'
+
+                    if (request.indexOf("GET /setup") >= 0) {
+                        Serial.println("Client requested setup "); 
+                        // Flush the remaining HTTP headers from the client
+                        while (client.available()) {
+                            String line = client.readStringUntil('\n');
+                            if (line == "\r") { 
+                                break; // An empty line indicates the end of the headers
+                            }
+                        }
+
+                        // Send the HTTP response headers
+                        client.println("HTTP/1.1 200 OK");
+                        client.println("Content-type: text/html");
+                        client.println("Connection: close");
+                        client.println(); // Crucial: blank line separates headers from body
+
+                        // Send the payload
+                        client.println(index_html); 
+                        
+                    } else if (request.indexOf("POST /save") >= 0) {
+                        // Read the POST data from the client (the new configuration)
+                        String postData = "";
+                        while (client.available()) {
+                            postData += client.readStringUntil('\n');
+                        }
+                        Serial.println("Received POST data: " + postData);
+                        String opMode = urlDecode(postData.substring(postData.indexOf("mode=") + 5, postData.indexOf("&ssid=")));
+                        String ssid = urlDecode(postData.substring(postData.indexOf("ssid=") + 5, postData.indexOf("&password=")));
+                        String password = urlDecode(postData.substring(postData.indexOf("password=") + 9, postData.indexOf("&org_code=")));
+                        String organizationCode = urlDecode(postData.substring(postData.indexOf("org_code=") + 9, postData.indexOf("org_code=") + 15));  // 6 digits code
+                        int apiURLStartIndex = postData.indexOf("api_url=") + 8;
+                        String apiURL = urlDecode(postData.substring(apiURLStartIndex, postData.indexOf("&", apiURLStartIndex)));
+
+                        Serial.println("Parsed config - Mode: " + opMode + ", SSID: " + ssid + ", Password: <REDACTED>" + ", API URL: " + apiURL + ", Org Code: " + organizationCode);
+
+                        // Validate input data
+                        if ((opMode != "wifi" && opMode != "ble") || ssid.length() == 0 || organizationCode.length() != 6) {
+                            Serial.println("Invalid configuration data received.");
+                            client.println("HTTP/1.1 400 Bad Request");
+                            client.println("Connection: close");
+                            client.println();
+                            client.println("Invalid configuration data. Please check your input and try again.");
+                            client.stop();
+                            return;
+                        }
+
+                        // Save the configuration to CONFIG_FILE in the format "KEY:VALUE"
+                        dataStorage.clear(CONFIG_FILE);	// Clear existing config
+
+                        // Check for 'https://' prefix in API URL to ensure consistency in the stored config and avoid issues when using the URL later
+                        if (!apiURL.startsWith("http://") && !apiURL.startsWith("https://")) {
+                            apiURL = "http://" + apiURL;
+                        }
+
+                        File configFile = LittleFS.open(CONFIG_FILE, "w");
+                        if (configFile) {
+                            configFile.println("STATE:" + opMode);
+                            configFile.println("SSID:" + ssid);
+                            configFile.println("PASSWORD:" + password);
+                            configFile.println("API_URL:" + apiURL);
+                            configFile.println("ORG_CODE:" + organizationCode);
+                            configFile.close();
+                            Serial.println("Configuration saved to " CONFIG_FILE);
+                        } else {
+                            Serial.println("Failed to open " CONFIG_FILE " for writing.");
+                        }
+
+                        client.println("HTTP/1.1 200 OK");
+                        client.println("Content-type: text/plain");
+                        client.println("Connection: close");
+                        client.println();
+                        client.println("Settings saved. Hydrobase is rebooting...");
+                        ESP.restart();
+                    } else {	// Handle unknown endpoints with a 404 response
+                        client.println("HTTP/1.1 404 Not Found");
+                        client.println("Connection: close");
+                        client.println();
+                    }
+                }
+                
+                // Give the web browser time to receive the data
+                delay(10);
+            
+                client.stop();
+                Serial.println("Client disconnected.");
+            }
+			vTaskDelay(10 / portTICK_PERIOD_MS); // Short delay to prevent watchdog timer reset while waiting for clients in the main loop
+        }
+    } else if (currentState == STATE::BLE) {
         // The BLEManager task handles everything, so we just run an infinite loop
         vTaskDelay(1000 / portTICK_PERIOD_MS);
-        return;
     } else if (currentState == STATE::WIFI) {
         unsigned long currentTime = millis();
         // Check if user needs to be reminded to interact with the device every GET_REMINDER_INTERVAL seconds (e.g. to drink water, etc)
@@ -257,8 +384,6 @@ void loop() {
             Serial.println("Sending data to server: " + payload);
             wifiManager->sendData("/device/:ID/status", payload, "application/json");
         }
-        
-        // Retrieve alert status from the server every ALERT_CHECK_INTERVAL seconds to check if we need to trigger an alert on the device
     }
 
     vTaskDelay(250 / portTICK_PERIOD_MS); // Main loop runs every 250 ms
