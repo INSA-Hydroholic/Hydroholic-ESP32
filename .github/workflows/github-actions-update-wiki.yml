@@ -30,7 +30,7 @@ jobs:
         with:
           image: rlespinasse/drawio-desktop-headless:latest
           options: --rm -v ${{ github.workspace }}/wiki:/data
-          run: drawio -x -f svg /data
+          run: drawio --no-sandbox -x -f svg /data
       
       - name: Commit and push changes to the wiki
         run: |
