@@ -1,0 +1,49 @@
+name: GitHub Actions Update Wiki
+run-name: Updating Wiki on ${{ github.actor }}'s push to ${{ github.repository }}
+on: 
+  gollum:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '**.drawio'
+jobs:
+  update-wiki:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - run: echo "The job was triggered by a ${{ github.event_name }} event."
+      - run: echo "Running on branch ${{ github.ref }} of ${{ github.repository }} repository."
+
+      - name: Checking out repository code
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ github.repository }}.wiki
+          token: ${{ secrets.GITHUB_TOKEN }}
+          path: wiki
+      - run: echo "Repository wiki has been checked out to the runner."
+
+      - name: List files in the wiki repository
+        run: |
+          ls wiki
+
+      - name: Regenerate drawio diagrams with `docker-drawio-desktop-headless`
+        uses: addnab/docker-run-action@v3
+        with:
+          image: rlespinasse/drawio-desktop-headless:latest
+          options: --rm -v ${{ github.workspace }}/wiki:/data
+          run: xvfb-run drawio --no-sandbox --disable-gpu --disable-dev-shm-usage -x -f svg /data
+      
+      - name: Commit and push changes to the wiki
+        run: |
+          cd wiki
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Update wiki diagrams [skip ci]" || echo "No changes to commit"
+          git push origin HEAD
+      
+      - run: echo "Wiki update process completed. Check the wiki for updated diagrams."
