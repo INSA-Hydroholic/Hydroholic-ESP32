@@ -6,8 +6,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - '**.drawio'
 jobs:
   update-wiki:
     runs-on: ubuntu-latest
