@@ -30,12 +30,7 @@ jobs:
         with:
           image: rlespinasse/drawio-desktop-headless:latest
           options: --rm -v ${{ github.workspace }}/wiki:/data
-          run: |
-            for file in /data/**/*.drawio; do
-              [ -e "$file" ] || continue
-              echo "Processing $file..."
-              xvfb-run drawio --no-sandbox --disable-gpu --disable-dev-shm-usage -x -f svg "$file"
-            done
+          run: xvfb-run drawio --no-sandbox --disable-gpu --disable-dev-shm-usage -x -f svg /data
       
       - name: Commit and push changes to the wiki
         run: |
